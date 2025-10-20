@@ -1,20 +1,8 @@
 "use client"
 
-import { useState } from "react"
-import { Wallet } from "lucide-react"
+import { ConnectButton } from "@rainbow-me/rainbowkit"
 
-interface HeaderProps {
-  isConnected: boolean
-  setIsConnected: (connected: boolean) => void
-}
-
-export default function Header({ isConnected, setIsConnected }: HeaderProps) {
-  const [walletAddress, setWalletAddress] = useState("0x742d...8f2a")
-
-  const handleWalletConnect = () => {
-    setIsConnected(!isConnected)
-  }
-
+export default function Header() {
   return (
     <header className="border-b border-border bg-card">
       <div className="px-4 md:px-6 py-4">
@@ -48,18 +36,9 @@ export default function Header({ isConnected, setIsConnected }: HeaderProps) {
           </div>
 
           {/* Wallet Button */}
-          <button
-            onClick={handleWalletConnect}
-            className={`flex items-center gap-2 px-4 py-2 rounded font-semibold transition-colors ${
-              isConnected
-                ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                : "bg-muted text-foreground hover:bg-muted/80"
-            }`}
-          >
-            <Wallet size={18} />
-            <span className="hidden sm:inline">{isConnected ? walletAddress : "Connect Wallet"}</span>
-            <span className="sm:hidden">{isConnected ? "Connected" : "Connect"}</span>
-          </button>
+          <div>
+            <ConnectButton />
+          </div>
         </div>
       </div>
     </header>

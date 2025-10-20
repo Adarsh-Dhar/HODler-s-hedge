@@ -9,7 +9,6 @@ import PositionPanel from "@/components/position-panel"
 export default function Home() {
   const [mockPrice, setMockPrice] = useState(42850)
   const [mockPnL, setMockPnL] = useState(1250)
-  const [isConnected, setIsConnected] = useState(false)
 
   // Simulate real-time price updates
   useEffect(() => {
@@ -29,7 +28,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Header isConnected={isConnected} setIsConnected={setIsConnected} />
+      <Header />
 
       <main className="p-4 md:p-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
