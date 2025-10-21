@@ -4,10 +4,29 @@ import { Card } from "@/components/ui/card"
 
 interface ChartPanelProps {
   price: number
+  markPrice?: bigint
+  fundingRate?: bigint
+  nextFundingTime?: bigint
+  isFundingDue?: boolean
 }
 
-export default function ChartPanel({ price }: ChartPanelProps) {
+export default function ChartPanel({ price, markPrice, fundingRate, nextFundingTime, isFundingDue }: ChartPanelProps) {
   const priceChange = ((price - 42000) / 42000) * 100
+  
+  // Format funding rate as percentage
+  const fundingRatePercent = fundingRate ? Number(fundingRate) / 1e18 * 100 : 0
+  
+  // Calculate time until next funding
+  const getNextFundingTime = () => {
+    if (!nextFundingTime) return "2h 15m"
+    const now = Math.floor(Date.now() / 1000)
+    const timeDiff = Number(nextFundingTime) - now
+    if (timeDiff <= 0) return "Due now"
+    
+    const hours = Math.floor(timeDiff / 3600)
+    const minutes = Math.floor((timeDiff % 3600) / 60)
+    return `${hours}h ${minutes}m`
+  }
 
   return (
     <Card className="bg-card border-border p-6">
@@ -60,12 +79,14 @@ export default function ChartPanel({ price }: ChartPanelProps) {
           <div className="bg-muted rounded p-3">
             <p className="text-muted-foreground text-xs uppercase tracking-wide">Mark Price</p>
             <p className="text-foreground font-semibold mt-1">
-              ${(price + 50).toLocaleString("en-US", { maximumFractionDigits: 0 })}
+              ${markPrice ? (Number(markPrice) / 1e18).toLocaleString("en-US", { maximumFractionDigits: 0 }) : (price + 50).toLocaleString("en-US", { maximumFractionDigits: 0 })}
             </p>
           </div>
           <div className="bg-muted rounded p-3">
             <p className="text-muted-foreground text-xs uppercase tracking-wide">Next Funding</p>
-            <p className="text-foreground font-semibold mt-1">2h 15m</p>
+            <p className={`text-foreground font-semibold mt-1 ${isFundingDue ? "text-destructive" : ""}`}>
+              {getNextFundingTime()}
+            </p>
           </div>
         </div>
       </div>

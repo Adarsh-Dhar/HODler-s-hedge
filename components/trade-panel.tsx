@@ -6,20 +6,36 @@ import { Button } from "@/components/ui/button"
 
 interface TradePanelProps {
   price: number
+  vaultBalance?: bigint
+  maxLeverage?: bigint
+  tradingFee?: bigint
+  onOpenPosition: (isLong: boolean, marginAmount: bigint, leverage: bigint) => void
+  isPending: boolean
 }
 
-export default function TradePanel({ price }: TradePanelProps) {
+export default function TradePanel({ price, vaultBalance, maxLeverage, tradingFee, onOpenPosition, isPending }: TradePanelProps) {
   const [tradeType, setTradeType] = useState<"long" | "short">("long")
   const [margin, setMargin] = useState(1000)
   const [leverage, setLeverage] = useState(5)
-  const [availableBalance] = useState(5000)
+  
+  // Convert vault balance from wei to tBTC
+  const availableBalance = vaultBalance ? Number(vaultBalance) / 1e18 : 0
+  const maxLeverageValue = maxLeverage ? Number(maxLeverage) : 20
+  const tradingFeeRate = tradingFee ? Number(tradingFee) / 1e18 : 0.001
 
   const positionSize = margin * leverage
   const liquidationPrice =
     tradeType === "long" ? price * (1 - (1 / leverage) * 0.95) : price * (1 + (1 / leverage) * 0.95)
-  const tradingFee = positionSize * 0.001
+  const calculatedTradingFee = positionSize * tradingFeeRate
 
-  const isValid = margin > 0 && margin <= availableBalance && leverage >= 1 && leverage <= 20
+  const isValid = margin > 0 && margin <= availableBalance && leverage >= 1 && leverage <= maxLeverageValue
+  
+  const handleOpenPosition = () => {
+    if (!isValid) return
+    const marginAmount = BigInt(Math.floor(margin * 1e18)) // Convert to wei
+    const leverageBigInt = BigInt(leverage)
+    onOpenPosition(tradeType === "long", marginAmount, leverageBigInt)
+  }
 
   return (
     <Card className="bg-card border-border p-6">
@@ -73,14 +89,14 @@ export default function TradePanel({ price }: TradePanelProps) {
           <input
             type="range"
             min="1"
-            max="20"
+            max={maxLeverageValue}
             value={leverage}
             onChange={(e) => setLeverage(Number.parseInt(e.target.value))}
             className="w-full h-2 bg-muted rounded appearance-none cursor-pointer accent-primary"
           />
           <div className="flex justify-between text-muted-foreground text-xs mt-1">
             <span>1x</span>
-            <span>20x</span>
+            <span>{maxLeverageValue}x</span>
           </div>
         </div>
 
@@ -116,23 +132,23 @@ export default function TradePanel({ price }: TradePanelProps) {
 
           <div className="flex items-center justify-between">
             <p className="text-muted-foreground text-sm">Trading Fee</p>
-            <p className="text-foreground font-semibold">${tradingFee.toFixed(2)}</p>
+            <p className="text-foreground font-semibold">${calculatedTradingFee.toFixed(2)}</p>
           </div>
         </div>
 
         {/* Execute Button */}
         <Button
-          onClick={() => {}}
-          disabled={!isValid}
+          onClick={handleOpenPosition}
+          disabled={!isValid || isPending}
           className={`w-full py-3 rounded font-bold text-lg transition-colors ${
-            isValid
+            isValid && !isPending
               ? tradeType === "long"
                 ? "bg-success hover:bg-success/90 text-background"
                 : "bg-destructive hover:bg-destructive/90 text-background"
               : "bg-muted text-muted-foreground cursor-not-allowed"
           }`}
         >
-          Confirm {tradeType === "long" ? "Long" : "Short"}
+          {isPending ? "Opening Position..." : `Confirm ${tradeType === "long" ? "Long" : "Short"}`}
         </Button>
       </div>
     </Card>
