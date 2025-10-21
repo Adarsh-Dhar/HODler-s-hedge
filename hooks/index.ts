@@ -11,3 +11,4 @@ export * from './use-funding'
 // ============================================================================
 export * from './use-mobile'
 export * from './use-toast'
+export * from './use-btc-price'
