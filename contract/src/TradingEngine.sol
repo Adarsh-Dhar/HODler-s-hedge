@@ -70,7 +70,7 @@ contract TradingEngine is ReentrancyGuard, Ownable {
         _;
     }
     
-    function _onlyValidLeverage(uint256 leverage) internal {
+    function _onlyValidLeverage(uint256 leverage) internal pure {
         require(leverage >= 1 && leverage <= MAX_LEVERAGE, "TradingEngine: Invalid leverage");
     }
     
@@ -92,8 +92,8 @@ contract TradingEngine is ReentrancyGuard, Ownable {
         // Calculate position size
         uint256 positionSize = marginAmount * leverage;
         
-        // Calculate trading fee
-        uint256 fee = (positionSize * TRADING_FEE) / 100000;
+        // Calculate trading fee (currently unused but kept for future implementation)
+        // uint256 fee = (positionSize * TRADING_FEE) / 100000;
         
         // Lock margin in vault
         vault.lockMargin(msg.sender, marginAmount);
@@ -180,7 +180,8 @@ contract TradingEngine is ReentrancyGuard, Ownable {
         // For long: liquidationPrice = entryPrice * (1 - (1/leverage) * (1 - maintenanceMarginRatio))
         // For short: liquidationPrice = entryPrice * (1 + (1/leverage) * (1 - maintenanceMarginRatio))
         
-        uint256 maintenanceMargin = (position.size * MAINTENANCE_MARGIN_RATIO) / 100000;
+        // Calculate maintenance margin (currently unused but kept for future implementation)
+        // uint256 maintenanceMargin = (position.size * MAINTENANCE_MARGIN_RATIO) / 100000;
         uint256 priceImpact = (position.entryPrice * (100000 - MAINTENANCE_MARGIN_RATIO)) / (position.leverage * 100000);
         
         if (position.isLong) {
@@ -221,7 +222,7 @@ contract TradingEngine is ReentrancyGuard, Ownable {
         _;
     }
     
-    function _whenNotPaused() internal {
+    function _whenNotPaused() internal view {
         require(!paused, "TradingEngine: Contract is paused");
     }
     

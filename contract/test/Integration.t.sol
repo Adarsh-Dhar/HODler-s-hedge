@@ -16,8 +16,8 @@ contract IntegrationTest is Test {
     address public user = address(0x1);
     address public liquidator = address(0x2);
     
-    // tBTC address on Mezo testnet
-    address constant TBTC = 0x517f2982701695D4E52f1ECFBEf3ba31Df470161;
+    // BTC address on Mezo testnet
+    address constant TBTC = 0x7b7C000000000000000000000000000000000000;
     
     function setUp() public {
         // Deploy contracts
@@ -32,13 +32,13 @@ contract IntegrationTest is Test {
         // Set up tBTC interface
         tbtc = ITBTC(TBTC);
         
-        // Give user some tBTC (mock for testing)
+        // Give user some BTC (mock for testing)
         vm.deal(user, 10 ether);
     }
     
     function testFullTradingFlow() public {
         // This is a basic integration test
-        // In a real test, you would need to mock the tBTC token
+        // In a real test, you would need to mock the BTC token
         // or deploy a test ERC20 token
         
         // Test that contracts are properly connected
@@ -64,7 +64,7 @@ contract IntegrationTest is Test {
         assertEq(fundingRate.getFundingRate(), 10);
         
         // Test funding payment calculation
-        int256 payment = fundingRate.calculateFundingPayment(1000e8, true); // 1000 tBTC long
+        int256 payment = fundingRate.calculateFundingPayment(1000e18, true); // 1000 BTC long
         assertTrue(payment > 0); // Long pays positive funding rate
     }
     

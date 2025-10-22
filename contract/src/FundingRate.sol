@@ -29,7 +29,7 @@ contract FundingRate is Ownable {
         _;
     }
     
-    function _onlyTradingEngine() internal {
+    function _onlyTradingEngine() internal view {
         require(msg.sender == tradingEngine, "FundingRate: Only TradingEngine");
     }
     
@@ -80,7 +80,7 @@ contract FundingRate is Ownable {
     }
     
     // Function to be called by TradingEngine when closing positions
-    function applyFundingPayment(uint256 positionSize, bool isLong) external onlyTradingEngine returns (int256) {
+    function applyFundingPayment(uint256 positionSize, bool isLong) external view onlyTradingEngine returns (int256) {
         return this.calculateFundingPayment(positionSize, isLong);
     }
 }

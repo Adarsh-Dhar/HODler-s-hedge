@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useAccount } from "wagmi"
+import { vaultAddress } from "@/lib/address"
 import Header from "@/components/header"
 import ChartPanel from "@/components/chart-panel"
 import TradePanel from "@/components/trade-panel"
@@ -19,6 +20,10 @@ import {
   useVaultBalance,
   useVaultDeposit,
   useVaultWithdraw,
+  useVaultOwner,
+  useTBTCBalance,
+  useTBTCAllowance,
+  useTBTCApprove,
   useFundingRate,
   useFundingRateNextTime,
   useFundingRateIsDue,
@@ -33,7 +38,10 @@ export default function Home() {
   const { data: position } = useTradingEnginePosition(userAddress)
   const { data: liquidationPrice } = useTradingEngineLiquidationPrice(userAddress)
   const { data: isLiquidatable } = useTradingEngineIsLiquidatable(userAddress)
-  const { data: vaultBalance } = useVaultBalance(userAddress)
+  const { data: vaultBalance, refetch: refetchVaultBalance } = useVaultBalance(userAddress)
+  const { data: vaultOwner } = useVaultOwner()
+  const { data: walletBalance, error: walletBalanceError, isLoading: walletBalanceLoading } = useTBTCBalance(userAddress)
+  const { data: allowance } = useTBTCAllowance(userAddress, vaultAddress as `0x${string}`)
   const { data: fundingRate } = useFundingRate()
   const { data: nextFundingTime } = useFundingRateNextTime()
   const { data: isFundingDue } = useFundingRateIsDue()
@@ -42,8 +50,9 @@ export default function Home() {
   // Trading actions
   const { openPosition, isPending: isOpening } = useTradingEngineOpenPosition()
   const { closePosition, isPending: isClosing } = useTradingEngineClosePosition()
-  const { deposit, isPending: isDepositing } = useVaultDeposit()
+  const { deposit, isPending: isDepositing, error: depositError, isConfirmed: isDepositConfirmed, hash: depositHash } = useVaultDeposit()
   const { withdraw, isPending: isWithdrawing } = useVaultWithdraw()
+  const { approve, isPending: isApproving, error: approveError, isConfirmed: isApproveConfirmed } = useTBTCApprove()
   
   // Calculate PnL from position data
   const calculatePnL = () => {
@@ -61,6 +70,17 @@ export default function Home() {
     (position as any)?.size || BigInt(0),
     (position as any)?.isLong || false
   )
+
+  // Refetch vault balance after successful deposit
+  useEffect(() => {
+    if (isDepositConfirmed) {
+      console.log('Deposit confirmed, refetching vault balance...')
+      console.log('Current vault balance before refetch:', vaultBalance?.toString())
+      refetchVaultBalance().then((result) => {
+        console.log('Vault balance after refetch:', result.data?.toString())
+      })
+    }
+  }, [isDepositConfirmed, refetchVaultBalance, vaultBalance])
 
   return (
     <div className="min-h-screen bg-background">
@@ -88,6 +108,19 @@ export default function Home() {
               tradingFee={tradingConstants.tradingFee.data as bigint}
               onOpenPosition={openPosition}
               isPending={isOpening}
+              walletBalance={walletBalance as bigint}
+              allowance={allowance as bigint}
+              onDeposit={deposit}
+              onApprove={(amount) => approve(vaultAddress as `0x${string}`, amount)}
+              isDepositing={isDepositing}
+              isApproving={isApproving}
+              walletBalanceError={walletBalanceError || undefined}
+              walletBalanceLoading={walletBalanceLoading}
+              depositError={depositError || undefined}
+              approveError={approveError || undefined}
+              isDepositConfirmed={isDepositConfirmed}
+              isApproveConfirmed={isApproveConfirmed}
+              depositHash={depositHash}
             />
           </div>
         </div>

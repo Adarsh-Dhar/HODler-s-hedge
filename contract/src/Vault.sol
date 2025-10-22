@@ -22,6 +22,7 @@ contract Vault is ReentrancyGuard, Ownable {
     event TradingEngineUpdated(address indexed oldEngine, address indexed newEngine);
     
     constructor(address _tbtc) Ownable(msg.sender) {
+        require(_tbtc != address(0), "Vault: Invalid TBTC address");
         TBTC = ITBTC(_tbtc);
     }
     
@@ -30,7 +31,7 @@ contract Vault is ReentrancyGuard, Ownable {
         _;
     }
     
-    function _onlyTradingEngine() internal {
+    function _onlyTradingEngine() internal view {
         require(msg.sender == tradingEngine, "Vault: Only TradingEngine");
     }
     

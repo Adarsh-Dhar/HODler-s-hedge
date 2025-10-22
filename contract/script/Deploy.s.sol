@@ -5,11 +5,9 @@ import {Script, console} from "forge-std/Script.sol";
 import {Vault} from "../src/Vault.sol";
 import {TradingEngine} from "../src/TradingEngine.sol";
 import {FundingRate} from "../src/FundingRate.sol";
+import {MockTBTC} from "../src/MockTBTC.sol";
 
 contract DeployScript is Script {
-    // tBTC address on Mezo testnet
-    address constant TBTC = 0x517f2982701695D4E52f1ECFBEf3ba31Df470161;
-    
     // Initial BTC price: $42,000 (in wei)
     uint256 constant INITIAL_MARK_PRICE = 42000e18;
     
@@ -19,13 +17,21 @@ contract DeployScript is Script {
         
         console.log("Deploying contracts with account:", deployer);
         console.log("Account balance:", deployer.balance);
-        console.log("tBTC address:", TBTC);
+        
+        // Get current nonce and use it
+        uint256 currentNonce = vm.getNonce(deployer);
+        console.log("Current nonce:", currentNonce);
         
         vm.startBroadcast(deployerPrivateKey);
         
-        // Deploy Vault
+        // Deploy MockTBTC first
+        console.log("Deploying MockTBTC...");
+        MockTBTC tbtc = new MockTBTC();
+        console.log("MockTBTC deployed at:", address(tbtc));
+        
+        // Deploy Vault with MockTBTC address
         console.log("Deploying Vault...");
-        Vault vault = new Vault(TBTC);
+        Vault vault = new Vault(address(tbtc));
         console.log("Vault deployed at:", address(vault));
         
         // Deploy FundingRate
@@ -33,7 +39,7 @@ contract DeployScript is Script {
         FundingRate fundingRate = new FundingRate();
         console.log("FundingRate deployed at:", address(fundingRate));
         
-        // Deploy TradingEngine
+        // Deploy TradingEngine with references
         console.log("Deploying TradingEngine...");
         TradingEngine tradingEngine = new TradingEngine(
             address(vault),
@@ -42,7 +48,7 @@ contract DeployScript is Script {
         );
         console.log("TradingEngine deployed at:", address(tradingEngine));
         
-        // Set up cross-references
+        // Set up cross-references after all contracts are deployed
         console.log("Setting up contract references...");
         vault.setTradingEngine(address(tradingEngine));
         fundingRate.setTradingEngine(address(tradingEngine));
@@ -53,7 +59,7 @@ contract DeployScript is Script {
         console.log("Vault:", address(vault));
         console.log("TradingEngine:", address(tradingEngine));
         console.log("FundingRate:", address(fundingRate));
-        console.log("tBTC Token:", TBTC);
+        console.log("MockTBTC:", address(tbtc));
         console.log("Initial Mark Price: $42,000");
         
         // Verify deployment
