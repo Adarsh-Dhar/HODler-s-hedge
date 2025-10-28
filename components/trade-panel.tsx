@@ -10,8 +10,12 @@ interface TradePanelProps {
   vaultBalance?: bigint
   maxLeverage?: bigint
   tradingFee?: bigint
-  onOpenPosition: (isLong: boolean, marginAmount: bigint, leverage: bigint) => void
+  onOpenPosition: (isLong: boolean, marginAmount: bigint, leverage: bigint) => Promise<void>
   isPending: boolean
+  openPositionError?: Error
+  isOpenPositionConfirmed?: boolean
+  openPositionHash?: string
+  currentPosition?: any
   // Deposit props
   walletBalance?: bigint
   allowance?: bigint
@@ -35,6 +39,10 @@ export default function TradePanel({
   tradingFee, 
   onOpenPosition, 
   isPending,
+  openPositionError,
+  isOpenPositionConfirmed,
+  openPositionHash,
+  currentPosition,
   walletBalance,
   allowance,
   onDeposit,
@@ -74,13 +82,42 @@ export default function TradePanel({
     tradeType === "long" ? price * (1 - (1 / leverage) * 0.95) : price * (1 + (1 / leverage) * 0.95)
   const calculatedTradingFee = positionSize * tradingFeeRate
 
-  const isValid = margin > 0 && margin <= availableBalance && leverage >= 1 && leverage <= maxLeverageValue
+  const isValid = margin > 0 && margin <= availableBalance && leverage >= 1 && leverage <= maxLeverageValue && !currentPosition?.exists
   
-  const handleOpenPosition = () => {
+  // Additional validation for better error messages
+  const validationErrors = []
+  if (margin <= 0) validationErrors.push("Margin must be greater than 0")
+  if (margin > availableBalance) validationErrors.push(`Insufficient vault balance. Available: ${availableBalance.toFixed(4)} BTC`)
+  if (leverage < 1 || leverage > maxLeverageValue) validationErrors.push(`Leverage must be between 1 and ${maxLeverageValue}`)
+  if (currentPosition?.exists) validationErrors.push(`You already have an open ${currentPosition.isLong ? 'long' : 'short'} position. Close it before opening a new one.`)
+  
+  const handleOpenPosition = async () => {
     if (!isValid) return
-    const marginAmount = BigInt(Math.floor(margin * 1e18)) // Convert to wei
-    const leverageBigInt = BigInt(leverage)
-    onOpenPosition(tradeType === "long", marginAmount, leverageBigInt)
+    
+    try {
+      const marginAmount = BigInt(Math.floor(margin * 1e8)) // Convert to tBTC wei (8 decimals)
+      const leverageBigInt = BigInt(leverage)
+      
+      console.log('Opening position:', {
+        tradeType,
+        marginAmount: marginAmount.toString(),
+        leverage: leverageBigInt.toString(),
+        isValid,
+        availableBalance,
+        margin,
+        vaultBalance: vaultBalance?.toString(),
+        userAddress: 'Check console for user address'
+      })
+      
+      // Check if user already has a position
+      console.log('⚠️  IMPORTANT: If you already have an open position, you must close it before opening a new one!')
+      console.log('Current position:', currentPosition)
+      
+      await onOpenPosition(tradeType === "long", marginAmount, leverageBigInt)
+    } catch (error) {
+      console.error('Error opening position:', error)
+      // Error will be handled by the parent component and passed down as openPositionError
+    }
   }
 
   return (
@@ -340,6 +377,11 @@ export default function TradePanel({
             onChange={(e) => setMargin(Math.max(0, Number.parseFloat(e.target.value) || 0))}
             className="w-full bg-muted border border-border rounded px-3 py-2 text-foreground font-semibold focus:outline-none focus:ring-2 focus:ring-primary"
           />
+          {availableBalance === 0 && (
+            <p className="text-muted-foreground text-xs mt-1">
+              💡 Deposit BTC to the vault above to have margin available for trading
+            </p>
+          )}
         </div>
 
         {/* Leverage Slider */}
@@ -398,6 +440,16 @@ export default function TradePanel({
           </div>
         </div>
 
+        {/* Validation Errors */}
+        {validationErrors.length > 0 && (
+          <div className="p-3 bg-destructive/10 border border-destructive/20 rounded text-sm">
+            <p className="text-destructive font-semibold mb-1">Validation Errors:</p>
+            {validationErrors.map((error, index) => (
+              <p key={index} className="text-destructive text-xs">• {error}</p>
+            ))}
+          </div>
+        )}
+
         {/* Execute Button */}
         <Button
           onClick={handleOpenPosition}
@@ -412,6 +464,32 @@ export default function TradePanel({
         >
           {isPending ? "Opening Position..." : `Confirm ${tradeType === "long" ? "Long" : "Short"}`}
         </Button>
+
+        {/* Open Position Error */}
+        {openPositionError && (
+          <div className="p-3 bg-destructive/10 border border-destructive/20 rounded text-sm">
+            <p className="text-destructive font-semibold mb-1">Position Opening Failed</p>
+            <p className="text-destructive text-xs">{openPositionError.message}</p>
+            <p className="text-destructive text-xs mt-1">
+              Check console for more details
+            </p>
+          </div>
+        )}
+
+        {/* Open Position Success */}
+        {isOpenPositionConfirmed && (
+          <div className="p-3 bg-success/10 border border-success/20 rounded text-sm">
+            <p className="text-success font-semibold mb-1">✓ Position Opened Successfully</p>
+            <p className="text-success text-xs">
+              {tradeType === "long" ? "Long" : "Short"} position opened with {leverage}x leverage
+            </p>
+            {openPositionHash && (
+              <p className="text-success text-xs mt-1">
+                TX: {openPositionHash.slice(0, 10)}...{openPositionHash.slice(-8)}
+              </p>
+            )}
+          </div>
+        )}
       </div>
     </Card>
   )

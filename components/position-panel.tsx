@@ -18,12 +18,16 @@ interface PositionPanelProps {
   price: number
   liquidationPrice?: bigint
   isLiquidatable?: boolean
-  onClosePosition: () => void
+  onClosePosition: () => Promise<void>
   isClosing: boolean
+  closePositionError?: Error
+  isClosePositionConfirmed?: boolean
+  closePositionHash?: string
+  isPaused?: boolean
   fundingPayment?: bigint
 }
 
-export default function PositionPanel({ position, pnl, price, liquidationPrice, isLiquidatable, onClosePosition, isClosing, fundingPayment }: PositionPanelProps) {
+export default function PositionPanel({ position, pnl, price, liquidationPrice, isLiquidatable, onClosePosition, isClosing, closePositionError, isClosePositionConfirmed, closePositionHash, isPaused, fundingPayment }: PositionPanelProps) {
   const [activeTab, setActiveTab] = useState<"positions" | "orders" | "history">("positions")
 
   // Use real position data or fallback to mock data
@@ -36,6 +40,35 @@ export default function PositionPanel({ position, pnl, price, liquidationPrice, 
   
   // Format funding payment
   const fundingPaymentValue = fundingPayment ? Number(fundingPayment) / 1e18 : 0
+
+  // Validation for close position (similar to TradePanel validation)
+  const canClosePosition = position?.exists && !isClosing && !isPaused
+
+  // Handle close position function (similar to handleOpenPosition in TradePanel)
+  const handleClosePosition = async () => {
+    if (!canClosePosition) {
+      console.error('Cannot close position:', {
+        positionExists: position?.exists,
+        isClosing,
+        canClosePosition
+      })
+      return
+    }
+    
+    try {
+      console.log('Closing position:', {
+        positionExists: position?.exists,
+        position: position,
+        isClosing,
+        canClosePosition
+      })
+      
+      await onClosePosition()
+    } catch (error) {
+      console.error('Error closing position:', error)
+      // Error will be handled by the parent component and passed down as closePositionError
+    }
+  }
 
   return (
     <Card className="bg-card border-border p-6">
@@ -119,6 +152,11 @@ export default function PositionPanel({ position, pnl, price, liquidationPrice, 
               <div className="text-center py-8">
                 <p className="text-muted-foreground">No open positions</p>
                 <p className="text-muted-foreground text-sm mt-2">Open a position to start trading</p>
+                <div className="mt-4 p-3 bg-muted/50 rounded border border-border">
+                  <p className="text-muted-foreground text-xs">
+                    💡 You need to have an open position to close it. Use the Trade Panel above to open a position first.
+                  </p>
+                </div>
               </div>
             )}
 
@@ -136,13 +174,61 @@ export default function PositionPanel({ position, pnl, price, liquidationPrice, 
                     </p>
                   </div>
                   <Button
-                    onClick={onClosePosition}
-                    disabled={isClosing}
+                    onClick={handleClosePosition}
+                    disabled={!canClosePosition}
                     className="bg-destructive hover:bg-destructive/90 text-background font-semibold"
                   >
                     {isClosing ? "Closing..." : "Close Position"}
                   </Button>
                 </div>
+              </div>
+            )}
+
+            {/* Contract Paused Warning */}
+            {isPaused && (
+              <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded text-sm">
+                <p className="text-yellow-600 font-semibold mb-1">⚠️ Trading Paused</p>
+                <p className="text-yellow-600 text-xs">Trading is currently paused. You cannot close positions at this time.</p>
+                <p className="text-yellow-600 text-xs mt-1">
+                  Please try again later when trading resumes.
+                </p>
+              </div>
+            )}
+
+            {/* Close Position Validation Error */}
+            {!position?.exists && !isPaused && (
+              <div className="p-3 bg-destructive/10 border border-destructive/20 rounded text-sm">
+                <p className="text-destructive font-semibold mb-1">No Position to Close</p>
+                <p className="text-destructive text-xs">You don't have an open position to close.</p>
+                <p className="text-destructive text-xs mt-1">
+                  Use the Trade Panel above to open a position first.
+                </p>
+              </div>
+            )}
+
+            {/* Close Position Error */}
+            {closePositionError && (
+              <div className="p-3 bg-destructive/10 border border-destructive/20 rounded text-sm">
+                <p className="text-destructive font-semibold mb-1">Position Closing Failed</p>
+                <p className="text-destructive text-xs">{closePositionError.message}</p>
+                <p className="text-destructive text-xs mt-1">
+                  Check console for more details
+                </p>
+              </div>
+            )}
+
+            {/* Close Position Success */}
+            {isClosePositionConfirmed && (
+              <div className="p-3 bg-success/10 border border-success/20 rounded text-sm">
+                <p className="text-success font-semibold mb-1">✓ Position Closed Successfully</p>
+                <p className="text-success text-xs">
+                  Position closed and margin returned to vault
+                </p>
+                {closePositionHash && (
+                  <p className="text-success text-xs mt-1">
+                    TX: {closePositionHash.slice(0, 10)}...{closePositionHash.slice(-8)}
+                  </p>
+                )}
               </div>
             )}
           </div>

@@ -43,6 +43,8 @@ const config = getDefaultConfig({
   ssr: true,
 });
 
+export { config }
+
 const queryClient = new QueryClient();
 
 export function Providers({ children }: { children: React.ReactNode }) {
