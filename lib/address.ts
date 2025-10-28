@@ -4,8 +4,8 @@
 //   BTC Token: 0x7b7C000000000000000000000000000000000000 (Mezo testnet)
 //   Initial Mark Price: $42,000
 
-export const vaultAddress = "0xb048853cD32e7dB0BC3B3Db2509b673360045690";
-export const tradingEngineAddress = "0xA00B75F91d024F03f6F7bDAC2D825CC8212Bb61D";
-export const fundingRateAddress = "0x7A536dA93245a2B0b67676dC8D5A8f828C553d75";
-export const tBTCAddress = "0x7b7C000000000000000000000000000000000000";
+export const vaultAddress = "0xEcF2C761a7D49A4ab3166fb04fE9cDb247676FbA";
+export const tradingEngineAddress = "0x23257C42a2EC1f3c0Bf2Dc5abEFB368ECeA63560";
+export const fundingRateAddress = "0x2a038ed96fa766161dE908aD70F2229275baFa48";
+export const tBTCAddress = "0x7D673aCbAEEe050F29ADBFaD35DC1616d249b9F2";
 export const initialMarkPrice = 42000e18;

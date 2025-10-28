@@ -2,16 +2,24 @@
 src = "src"
 out = "out"
 libs = ["lib"]
-solc = "0.8.20"
+solc = "0.8.28"
 optimizer = true
 optimizer_runs = 200
 via_ir = false
 verbosity = 2
+evm_version = "london"
+
+# Add your chain definitions *inside* the default profile
+[profile.default.chains]
+31611 = "mezo_testnet"
+686868 = "mezo"
 
 [rpc_endpoints]
 mezo_testnet = "https://rpc.test.mezo.org"
+mezo = "https://rpc.mezo.org"
 
 [etherscan]
-mezo_testnet = { key = "", url = "https://rpc.test.mezo.org" }
+mezo_testnet = { key = "no-api-key-needed", url = "https://explorer.test.mezo.org/api" }
+mezo = { key = "no-api-key-needed", url = "https://explorer.mezo.org/api" }
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
