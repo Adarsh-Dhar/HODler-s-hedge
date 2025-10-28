@@ -23,7 +23,7 @@ export function useVaultBalance(userAddress?: `0x${string}`) {
     userAddress,
     vaultAddress,
     balance: result.data?.toString() || 'undefined',
-    balanceFormatted: result.data ? Number(result.data) / 1e18 : 'undefined',
+    balanceFormatted: result.data ? Number(result.data) / 1e8 : 'undefined',
     isLoading: result.isLoading,
     error: result.error,
     isError: result.isError,
@@ -41,7 +41,7 @@ export function useVaultDeposit() {
       console.log('Attempting deposit:', {
         address: vaultAddress,
         amount: amount.toString(),
-        amountFormatted: Number(amount) / 1e18
+        amountFormatted: Number(amount) / 1e8
       })
       
       writeContract({
@@ -187,7 +187,7 @@ export function useTBTCBalance(userAddress?: `0x${string}`) {
 }
 
 export function useTBTCAllowance(owner?: `0x${string}`, spender?: `0x${string}`) {
-  return useReadContract({
+  const result = useReadContract({
     address: tBTCAddress,
     abi: ERC20ABI,
     functionName: 'allowance',
@@ -196,6 +196,19 @@ export function useTBTCAllowance(owner?: `0x${string}`, spender?: `0x${string}`)
       enabled: !!owner && !!spender,
     },
   })
+
+  // Debug logging
+  console.log('Allowance query result:', {
+    owner,
+    spender,
+    allowance: result.data?.toString() || 'undefined',
+    isLoading: result.isLoading,
+    error: result.error,
+    isError: result.isError,
+    isSuccess: result.isSuccess
+  })
+
+  return result
 }
 
 export function useTBTCApprove() {
@@ -207,7 +220,7 @@ export function useTBTCApprove() {
         tokenAddress: tBTCAddress,
         spender,
         amount: amount.toString(),
-        amountFormatted: Number(amount) / 1e18
+        amountFormatted: Number(amount) / 1e8
       })
       
       writeContract({

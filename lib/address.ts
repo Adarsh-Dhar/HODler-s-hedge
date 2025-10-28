@@ -1,11 +1,12 @@
-// Vault: 0x69f202cE1075b2bD3393Fb7B6772512a6503054E
-//   TradingEngine: 0xa5B1e9D525e905aEC4946CB99c261665F66Ae451
-//   FundingRate: 0xc43dA09Ca39Faad716367c7Fe866683af4495706
-//   BTC Token: 0x7b7C000000000000000000000000000000000000 (Mezo testnet)
+// New deployment with Mock tBTC integration
+//   Vault: 0x24ff77Ff0E97F81de69bA2077702aad89D9fE3D8
+//   TradingEngine: 0xa1637A1D40f083E380a89a29f9D8Cf4d060e8303
+//   FundingRate: 0xfb5FeA6e31b5f5093519A7CCEB6D28d45c7B5B01
+//   Mock tBTC: 0x56C4C6F233565a13690bC9E97163Ae812892Cf03
 //   Initial Mark Price: $42,000
 
-export const vaultAddress = "0xEcF2C761a7D49A4ab3166fb04fE9cDb247676FbA";
-export const tradingEngineAddress = "0x23257C42a2EC1f3c0Bf2Dc5abEFB368ECeA63560";
-export const fundingRateAddress = "0x2a038ed96fa766161dE908aD70F2229275baFa48";
-export const tBTCAddress = "0x7D673aCbAEEe050F29ADBFaD35DC1616d249b9F2";
+export const vaultAddress = "0x24ff77Ff0E97F81de69bA2077702aad89D9fE3D8";
+export const tradingEngineAddress = "0xa1637A1D40f083E380a89a29f9D8Cf4d060e8303";
+export const fundingRateAddress = "0xfb5FeA6e31b5f5093519A7CCEB6D28d45c7B5B01";
+export const tBTCAddress = "0x56C4C6F233565a13690bC9E97163Ae812892Cf03";
 export const initialMarkPrice = 42000e18;

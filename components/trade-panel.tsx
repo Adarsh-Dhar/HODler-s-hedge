@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { tBTCAddress } from "@/lib/address"
 
 interface TradePanelProps {
   price: number
@@ -62,9 +63,9 @@ export default function TradePanel({
     }
   }, [isDepositConfirmed])
   
-  // Convert vault balance from wei to tBTC
-  const availableBalance = vaultBalance ? Number(vaultBalance) / 1e18 : 0
-  const walletBalanceFormatted = walletBalance ? Number(walletBalance) / 1e18 : 0
+  // Convert vault balance from wei to tBTC (Mock tBTC uses 8 decimals)
+  const availableBalance = vaultBalance ? Number(vaultBalance) / 1e8 : 0
+  const walletBalanceFormatted = walletBalance ? Number(walletBalance) / 1e8 : 0
   const maxLeverageValue = maxLeverage ? Number(maxLeverage) : 20
   const tradingFeeRate = tradingFee ? Number(tradingFee) / 1e18 : 0.001
 
@@ -144,7 +145,7 @@ export default function TradePanel({
                     <div className="mt-2 p-2 bg-muted rounded text-xs">
                       <p className="text-muted-foreground mb-1">Import BTC token:</p>
                       <p className="font-mono text-xs break-all">
-                        0x7b7C000000000000000000000000000000000000
+                        {tBTCAddress}
                       </p>
                       <p className="text-muted-foreground mt-1">
                         Add this token to MetaMask to see your balance
@@ -221,7 +222,7 @@ export default function TradePanel({
                     Ready to deposit: {depositAmount.toFixed(4)} BTC
                   </p>
                   <p className="text-muted-foreground text-xs">
-                    Amount in wei: {BigInt(Math.floor(depositAmount * 1e18)).toString()}
+                    Amount in wei: {BigInt(Math.floor(depositAmount * 1e8)).toString()}
                   </p>
                 </div>
               )}
@@ -235,7 +236,7 @@ export default function TradePanel({
                       return
                     }
                     
-                    const amount = BigInt(Math.floor(depositAmount * 1e18))
+                    const amount = BigInt(Math.floor(depositAmount * 1e8))
                     
                     // Store the deposit amount before transaction
                     setLastDepositedAmount(depositAmount)
@@ -243,13 +244,14 @@ export default function TradePanel({
                     console.log('Transaction details:', {
                       depositAmount,
                       amount: amount.toString(),
-                      amountFormatted: Number(amount) / 1e18,
+                      amountFormatted: Number(amount) / 1e8,
                       walletBalance: walletBalance?.toString(),
                       allowance: allowance?.toString(),
-                      needsApproval: allowance && allowance < amount
+                      needsApproval: !allowance || allowance < amount
                     })
                     
-                    if (allowance && allowance < amount) {
+                    // Always try approval first if allowance is 0 or undefined
+                    if (!allowance || allowance === BigInt(0) || allowance < amount) {
                       console.log('Calling approve with amount:', amount.toString())
                       onApprove(amount)
                     } else {
@@ -273,10 +275,16 @@ export default function TradePanel({
                     ? "Approving..." 
                     : isDepositing 
                     ? "Depositing..." 
-                    : allowance && allowance < BigInt(Math.floor(depositAmount * 1e18))
+                    : !allowance || allowance === BigInt(0) || allowance < BigInt(Math.floor(depositAmount * 1e8))
                     ? "Approve BTC"
                     : "Deposit BTC"
                   }
+                  {/* Debug info */}
+                  {depositAmount > 0 && (
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Debug: Allowance={allowance?.toString() || 'undefined'}, Amount={BigInt(Math.floor(depositAmount * 1e8)).toString()}, NeedsApproval={!allowance || allowance < BigInt(Math.floor(depositAmount * 1e8)) ? 'Yes' : 'No'}
+                    </div>
+                  )}
                 </Button>
               )}
 
