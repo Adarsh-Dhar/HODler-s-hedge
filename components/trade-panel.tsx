@@ -30,6 +30,12 @@ interface TradePanelProps {
   isDepositConfirmed?: boolean
   isApproveConfirmed?: boolean
   depositHash?: string
+  // Withdraw props
+  onWithdraw: (amount: bigint) => void
+  isWithdrawing: boolean
+  withdrawError?: Error
+  isWithdrawConfirmed?: boolean
+  withdrawHash?: string
 }
 
 export default function TradePanel({ 
@@ -55,7 +61,12 @@ export default function TradePanel({
   approveError,
   isDepositConfirmed,
   isApproveConfirmed,
-  depositHash
+  depositHash,
+  onWithdraw,
+  isWithdrawing,
+  withdrawError,
+  isWithdrawConfirmed,
+  withdrawHash
 }: TradePanelProps) {
   const [tradeType, setTradeType] = useState<"long" | "short">("long")
   const [margin, setMargin] = useState(1000)
@@ -63,6 +74,9 @@ export default function TradePanel({
   const [depositAmount, setDepositAmount] = useState(0)
   const [showDeposit, setShowDeposit] = useState(false)
   const [lastDepositedAmount, setLastDepositedAmount] = useState(0)
+  const [withdrawAmount, setWithdrawAmount] = useState(0)
+  const [showWithdraw, setShowWithdraw] = useState(false)
+  const [lastWithdrawnAmount, setLastWithdrawnAmount] = useState(0)
 
   // Clear deposit amount after successful deposit
   useEffect(() => {
@@ -70,6 +84,13 @@ export default function TradePanel({
       setDepositAmount(0)
     }
   }, [isDepositConfirmed])
+
+  // Clear withdraw amount after successful withdraw
+  useEffect(() => {
+    if (isWithdrawConfirmed) {
+      setWithdrawAmount(0)
+    }
+  }, [isWithdrawConfirmed])
   
   // Convert vault balance from wei to tBTC (Mock tBTC uses 8 decimals)
   const availableBalance = vaultBalance ? Number(vaultBalance) / 1e8 : 0
@@ -357,6 +378,167 @@ export default function TradePanel({
                   {depositHash && (
                     <p className="text-success text-xs mt-1">
                       TX: {depositHash.slice(0, 10)}...{depositHash.slice(-8)}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Withdraw Section */}
+        <div className="border border-border rounded p-4 bg-muted/20">
+          <button
+            onClick={() => setShowWithdraw(!showWithdraw)}
+            className="w-full flex items-center justify-between text-left"
+          >
+            <p className="text-foreground font-semibold text-sm uppercase tracking-wide">
+              Withdraw BTC from Vault
+            </p>
+            <span className="text-muted-foreground">
+              {showWithdraw ? "−" : "+"}
+            </span>
+          </button>
+          
+          {showWithdraw && (
+            <div className="mt-4 space-y-4">
+              {/* Balance Display */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-background rounded p-3 border border-border">
+                  <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Vault Balance</p>
+                  <p className="text-foreground font-bold text-lg">
+                    {availableBalance.toFixed(4)} BTC
+                  </p>
+                  <p className="text-muted-foreground text-xs">
+                    Raw: {vaultBalance?.toString() || '0'}
+                  </p>
+                </div>
+                <div className="bg-background rounded p-3 border border-border">
+                  <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Wallet Balance</p>
+                  <p className="text-foreground font-bold text-lg">
+                    {walletBalanceLoading ? "Loading..." : walletBalanceFormatted.toFixed(4)} BTC
+                  </p>
+                  {walletBalanceError && (
+                    <div className="mt-2 p-2 bg-destructive/10 rounded text-xs">
+                      <p className="text-destructive mb-1">Error loading balance:</p>
+                      <p className="text-destructive text-xs">{walletBalanceError.message}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Withdraw Input */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-muted-foreground text-xs uppercase tracking-wide">Withdraw Amount</p>
+                  <button
+                    onClick={() => {
+                      console.log('Max withdraw button clicked, setting amount to:', availableBalance)
+                      setWithdrawAmount(availableBalance)
+                    }}
+                    className="text-primary text-xs hover:underline"
+                  >
+                    Max
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    type="number"
+                    step="0.0001"
+                    min="0"
+                    max={availableBalance}
+                    value={withdrawAmount}
+                    onChange={(e) => {
+                      const newAmount = Math.max(0, Number.parseFloat(e.target.value) || 0)
+                      console.log('Withdraw input changed:', e.target.value, '-> parsed:', newAmount)
+                      setWithdrawAmount(newAmount)
+                    }}
+                    placeholder="Enter BTC amount to withdraw"
+                    className="w-full bg-background border border-border rounded px-3 py-2 text-foreground font-semibold focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                  <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground text-sm">
+                    BTC
+                  </div>
+                </div>
+                {withdrawAmount > availableBalance && (
+                  <p className="text-destructive text-xs mt-1">
+                    Insufficient vault balance. Available: {availableBalance.toFixed(4)} BTC
+                  </p>
+                )}
+                {currentPosition?.exists && withdrawAmount > 0 && (
+                  <p className="text-yellow-600 text-xs mt-1">
+                    ⚠️ You have an open position. Consider closing it before withdrawing large amounts.
+                  </p>
+                )}
+              </div>
+
+              {/* Current Amount Display */}
+              {withdrawAmount > 0 && (
+                <div className="p-2 bg-muted rounded text-sm">
+                  <p className="text-foreground font-semibold">
+                    Ready to withdraw: {withdrawAmount.toFixed(4)} BTC
+                  </p>
+                  <p className="text-muted-foreground text-xs">
+                    Amount in wei: {BigInt(Math.floor(withdrawAmount * 1e8)).toString()}
+                  </p>
+                </div>
+              )}
+
+              {/* Withdraw Button */}
+              {withdrawAmount > 0 && (
+                <Button
+                  onClick={() => {
+                    if (withdrawAmount <= 0) {
+                      console.error('Cannot withdraw 0 or negative amount:', withdrawAmount)
+                      return
+                    }
+                    
+                    const amount = BigInt(Math.floor(withdrawAmount * 1e8))
+                    
+                    // Store the withdraw amount before transaction
+                    setLastWithdrawnAmount(withdrawAmount)
+                    
+                    console.log('Withdraw transaction details:', {
+                      withdrawAmount,
+                      amount: amount.toString(),
+                      amountFormatted: Number(amount) / 1e8,
+                      vaultBalance: vaultBalance?.toString(),
+                      availableBalance
+                    })
+                    
+                    console.log('Calling withdraw with amount:', amount.toString())
+                    onWithdraw(amount)
+                  }}
+                  disabled={
+                    withdrawAmount > availableBalance || 
+                    withdrawAmount === 0 || 
+                    isWithdrawing
+                  }
+                  className={`w-full py-2 rounded font-semibold transition-colors ${
+                    withdrawAmount > availableBalance || withdrawAmount === 0 || isWithdrawing
+                      ? "bg-muted text-muted-foreground cursor-not-allowed"
+                      : "bg-primary hover:bg-primary/90 text-background"
+                  }`}
+                >
+                  {isWithdrawing ? "Withdrawing..." : "Withdraw BTC"}
+                </Button>
+              )}
+
+              {/* Transaction Status Messages */}
+              {withdrawError && (
+                <div className="p-3 bg-destructive/10 border border-destructive/20 rounded text-sm">
+                  <p className="text-destructive font-semibold mb-1">Withdraw Failed</p>
+                  <p className="text-destructive text-xs">{withdrawError.message}</p>
+                </div>
+              )}
+
+              {isWithdrawConfirmed && (
+                <div className="p-3 bg-success/10 border border-success/20 rounded text-sm">
+                  <p className="text-success font-semibold mb-1">✓ Withdraw Successful</p>
+                  <p className="text-success text-xs">{lastWithdrawnAmount.toFixed(4)} BTC withdrawn from vault</p>
+                  {withdrawHash && (
+                    <p className="text-success text-xs mt-1">
+                      TX: {withdrawHash.slice(0, 10)}...{withdrawHash.slice(-8)}
                     </p>
                   )}
                 </div>

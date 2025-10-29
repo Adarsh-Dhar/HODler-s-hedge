@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useAccount, useReadContract } from "wagmi"
-import { vaultAddress, fundingRateAddress, tradingEngineAddress } from "@/lib/address"
+import { vaultAddress, fundingRateAddress, tradingEngineAddress, tBTCAddress } from "@/lib/address"
 import { VaultABI } from "@/lib/abi/Vault"
 import { FundingRateABI } from "@/lib/abi/FundingRate"
 import Header from "@/components/header"
@@ -20,18 +20,29 @@ import {
   useTradingEngineOpenPosition,
   useTradingEngineClosePosition,
   useTradingEnginePaused,
+  useTradingEngineLiquidate,
+  useTradingEngineInfo,
+  useTradingEnginePositionInfo,
   useContractSetup,
   useVaultBalance,
   useVaultDeposit,
   useVaultWithdraw,
   useVaultOwner,
+  useVaultTradingEngine,
+  useVaultTBTC,
+  useVaultInfo,
   useTBTCBalance,
   useTBTCAllowance,
   useTBTCApprove,
   useFundingRate,
   useFundingRateNextTime,
   useFundingRateIsDue,
-  useFundingRateCalculatePayment
+  useFundingRateCalculatePayment,
+  useFundingRateLastUpdateTime,
+  useFundingRateTradingEngine,
+  useFundingRateConstants,
+  useFundingRateInfo,
+  useFundingRateStatus
 } from "@/hooks"
 
 export default function Home() {
@@ -45,19 +56,27 @@ export default function Home() {
   const { data: isPaused } = useTradingEnginePaused()
   const { data: vaultBalance, refetch: refetchVaultBalance } = useVaultBalance(userAddress)
   const { data: vaultOwner } = useVaultOwner()
+  const { data: vaultTradingEngine } = useVaultTradingEngine()
+  const { data: vaultTBTC } = useVaultTBTC()
   const { data: walletBalance, error: walletBalanceError, isLoading: walletBalanceLoading } = useTBTCBalance(userAddress)
   const { data: allowance } = useTBTCAllowance(userAddress, vaultAddress as `0x${string}`)
   const { data: fundingRate } = useFundingRate()
   const { data: nextFundingTime } = useFundingRateNextTime()
   const { data: isFundingDue } = useFundingRateIsDue()
+  const { data: lastFundingUpdate } = useFundingRateLastUpdateTime()
+  const { data: fundingTradingEngine } = useFundingRateTradingEngine()
   const tradingConstants = useTradingEngineConstants()
+  const fundingConstants = useFundingRateConstants()
+  const fundingStatus = useFundingRateStatus()
+  const vaultInfo = useVaultInfo()
   
   // Trading actions
   const { openPosition, isPending: isOpening, error: openPositionError, isConfirmed: isOpenPositionConfirmed, hash: openPositionHash } = useTradingEngineOpenPosition()
   const { closePosition, isPending: isClosing, error: closePositionError, isConfirmed: isClosePositionConfirmed, hash: closePositionHash } = useTradingEngineClosePosition()
+  const { liquidate, isPending: isLiquidating, error: liquidateError } = useTradingEngineLiquidate()
   const { setupAllReferences, isPending: isSettingUp, error: setupError } = useContractSetup()
   const { deposit, isPending: isDepositing, error: depositError, isConfirmed: isDepositConfirmed, hash: depositHash } = useVaultDeposit()
-  const { withdraw, isPending: isWithdrawing } = useVaultWithdraw()
+  const { withdraw, isPending: isWithdrawing, error: withdrawError, isConfirmed: isWithdrawConfirmed, hash: withdrawHash } = useVaultWithdraw()
   const { approve, isPending: isApproving, error: approveError, isConfirmed: isApproveConfirmed } = useTBTCApprove()
   
   // Calculate PnL from position data
@@ -71,18 +90,8 @@ export default function Home() {
   const currentPrice = markPrice ? Number(markPrice) / 1e18 : 42850
   const currentPnL = calculatePnL()
   
-  // Check contract references
-  const { data: vaultTradingEngine } = useReadContract({
-    address: vaultAddress,
-    abi: VaultABI,
-    functionName: 'tradingEngine',
-  })
-  
-  const { data: fundingTradingEngine } = useReadContract({
-    address: fundingRateAddress,
-    abi: FundingRateABI,
-    functionName: 'tradingEngine',
-  })
+  // Calculate price change for header
+  const priceChange = markPrice ? ((Number(markPrice) / 1e18) - 42000) / 42000 * 100 : 0
   
   // Calculate funding payment if position exists
   const { data: fundingPayment } = useFundingRateCalculatePayment(
@@ -116,7 +125,12 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Header />
+      <Header 
+        fundingRate={fundingRate as bigint}
+        nextFundingTime={nextFundingTime as bigint}
+        isFundingDue={isFundingDue as boolean}
+        priceChange={priceChange}
+      />
 
       <main className="p-4 md:p-6">
         {/* Contract Setup Alert */}
@@ -153,6 +167,12 @@ export default function Home() {
               fundingRate={fundingRate as bigint}
               nextFundingTime={nextFundingTime as bigint}
               isFundingDue={isFundingDue as boolean}
+              vaultAddress={vaultAddress}
+              tradingEngineAddress={tradingEngineAddress}
+              fundingRateAddress={fundingRateAddress}
+              tBTCAddress={tBTCAddress}
+              vaultOwner={vaultOwner?.toString()}
+              fundingInterval={fundingConstants.fundingInterval.data as bigint}
             />
           </div>
 
@@ -182,6 +202,11 @@ export default function Home() {
               isDepositConfirmed={isDepositConfirmed}
               isApproveConfirmed={isApproveConfirmed}
               depositHash={depositHash}
+              onWithdraw={withdraw}
+              isWithdrawing={isWithdrawing}
+              withdrawError={withdrawError || undefined}
+              isWithdrawConfirmed={isWithdrawConfirmed}
+              withdrawHash={withdrawHash}
             />
           </div>
         </div>
@@ -201,6 +226,17 @@ export default function Home() {
             closePositionHash={closePositionHash}
             isPaused={isPaused as boolean}
             fundingPayment={fundingPayment as bigint}
+            fundingStatus={{
+              isDue: isFundingDue as boolean,
+              nextTime: nextFundingTime as bigint,
+              lastUpdateTime: lastFundingUpdate as bigint
+            }}
+            lastFundingUpdate={lastFundingUpdate as bigint}
+            fundingInterval={fundingConstants.fundingInterval.data as bigint}
+            onLiquidate={liquidate}
+            isLiquidating={isLiquidating}
+            liquidateError={liquidateError || undefined}
+            userAddress={userAddress}
           />
         </div>
       </main>

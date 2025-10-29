@@ -10,11 +10,31 @@ interface ChartPanelProps {
   fundingRate?: bigint
   nextFundingTime?: bigint
   isFundingDue?: boolean
+  // Contract information
+  vaultAddress?: string
+  tradingEngineAddress?: string
+  fundingRateAddress?: string
+  tBTCAddress?: string
+  vaultOwner?: string
+  fundingInterval?: bigint
 }
 
-export default function ChartPanel({ price: fallbackPrice, markPrice, fundingRate, nextFundingTime, isFundingDue }: ChartPanelProps) {
+export default function ChartPanel({ 
+  price: fallbackPrice, 
+  markPrice, 
+  fundingRate, 
+  nextFundingTime, 
+  isFundingDue,
+  vaultAddress,
+  tradingEngineAddress,
+  fundingRateAddress,
+  tBTCAddress,
+  vaultOwner,
+  fundingInterval
+}: ChartPanelProps) {
   const { data: btcData, loading, error, lastUpdated } = useBTCPrice({ refreshInterval: 30000 })
   const [priceHistory, setPriceHistory] = useState<number[]>([])
+  const [showContractInfo, setShowContractInfo] = useState(false)
   
   // Use real-time price if available, otherwise fallback to prop
   const currentPrice = btcData?.price || fallbackPrice || 42000
@@ -178,6 +198,103 @@ export default function ChartPanel({ price: fallbackPrice, markPrice, fundingRat
               </p>
             )}
           </div>
+        </div>
+
+        {/* Contract Information Section */}
+        <div className="border border-border rounded p-4 bg-muted/20">
+          <button
+            onClick={() => setShowContractInfo(!showContractInfo)}
+            className="w-full flex items-center justify-between text-left"
+          >
+            <p className="text-foreground font-semibold text-sm uppercase tracking-wide">
+              System Information
+            </p>
+            <span className="text-muted-foreground">
+              {showContractInfo ? "−" : "+"}
+            </span>
+          </button>
+          
+          {showContractInfo && (
+            <div className="mt-4 space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-background rounded p-3 border border-border">
+                  <p className="text-muted-foreground text-xs uppercase tracking-wide mb-2">Contract Addresses</p>
+                  <div className="space-y-1 text-xs">
+                    <div>
+                      <span className="text-muted-foreground">Vault:</span>
+                      <p className="font-mono text-foreground break-all">
+                        {vaultAddress || "N/A"}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Trading Engine:</span>
+                      <p className="font-mono text-foreground break-all">
+                        {tradingEngineAddress || "N/A"}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Funding Rate:</span>
+                      <p className="font-mono text-foreground break-all">
+                        {fundingRateAddress || "N/A"}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">TBTC Token:</span>
+                      <p className="font-mono text-foreground break-all">
+                        {tBTCAddress || "N/A"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="bg-background rounded p-3 border border-border">
+                  <p className="text-muted-foreground text-xs uppercase tracking-wide mb-2">System Settings</p>
+                  <div className="space-y-1 text-xs">
+                    <div>
+                      <span className="text-muted-foreground">Vault Owner:</span>
+                      <p className="font-mono text-foreground break-all">
+                        {vaultOwner || "N/A"}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Funding Interval:</span>
+                      <p className="text-foreground font-semibold">
+                        {fundingInterval ? `${Number(fundingInterval) / 3600}h` : "N/A"}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Current Funding Rate:</span>
+                      <p className="text-foreground font-semibold">
+                        {fundingRate ? `${(Number(fundingRate) / 1e18 * 100).toFixed(4)}%` : "N/A"}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Next Funding:</span>
+                      <p className={`font-semibold ${isFundingDue ? "text-destructive" : "text-foreground"}`}>
+                        {nextFundingTime ? getNextFundingTime() : "N/A"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="bg-background rounded p-3 border border-border">
+                <p className="text-muted-foreground text-xs uppercase tracking-wide mb-2">System Status</p>
+                <div className="flex items-center gap-4 text-xs">
+                  <div className="flex items-center gap-1">
+                    <div className="w-2 h-2 bg-success rounded-full"></div>
+                    <span className="text-foreground">System Operational</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <div className={`w-2 h-2 rounded-full ${isFundingDue ? "bg-destructive" : "bg-success"}`}></div>
+                    <span className="text-foreground">
+                      Funding {isFundingDue ? "Due" : "Active"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </Card>

@@ -79,6 +79,10 @@ contract FundingRate is Ownable {
         return block.timestamp >= lastUpdateTime + FUNDING_INTERVAL;
     }
     
+    function getFundingInterval() external pure returns (uint256) {
+        return FUNDING_INTERVAL;
+    }
+    
     // Function to be called by TradingEngine when closing positions
     function applyFundingPayment(uint256 positionSize, bool isLong) external view onlyTradingEngine returns (int256) {
         return this.calculateFundingPayment(positionSize, isLong);

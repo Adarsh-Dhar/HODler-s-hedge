@@ -66,30 +66,16 @@ export function useFundingRateCalculatePayment(positionSize: bigint, isLong: boo
 // FUNDING ACTIONS
 // ============================================================================
 
-export function useFundingRateApplyPayment() {
-  const { writeContract, data: hash, isPending, error } = useWriteContract()
-  
-  const applyFundingPayment = (positionSize: bigint, isLong: boolean) => {
-    writeContract({
-      address: fundingRateAddress,
-      abi: FundingRateABI,
-      functionName: 'applyFundingPayment',
-      args: [positionSize, isLong],
-    })
-  }
-
-  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
-    hash,
+export function useFundingRateApplyPayment(positionSize: bigint, isLong: boolean) {
+  return useReadContract({
+    address: fundingRateAddress,
+    abi: FundingRateABI,
+    functionName: 'applyFundingPayment',
+    args: [positionSize, isLong],
+    query: {
+      enabled: positionSize > BigInt(0),
+    },
   })
-
-  return {
-    applyFundingPayment,
-    hash,
-    isPending,
-    isConfirming,
-    isConfirmed,
-    error,
-  }
 }
 
 // ============================================================================
@@ -100,7 +86,7 @@ export function useFundingRateConstants() {
   const fundingInterval = useReadContract({
     address: fundingRateAddress,
     abi: FundingRateABI,
-    functionName: 'FUNDING_INTERVAL',
+    functionName: 'getFundingInterval',
   })
 
   return {

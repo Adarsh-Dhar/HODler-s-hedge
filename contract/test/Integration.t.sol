@@ -36,7 +36,7 @@ contract IntegrationTest is Test {
         vm.deal(user, 10 ether);
     }
     
-    function testFullTradingFlow() public {
+    function testFullTradingFlow() public view {
         // This is a basic integration test
         // In a real test, you would need to mock the BTC token
         // or deploy a test ERC20 token

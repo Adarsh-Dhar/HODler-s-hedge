@@ -25,9 +25,41 @@ interface PositionPanelProps {
   closePositionHash?: string
   isPaused?: boolean
   fundingPayment?: bigint
+  // New props for enhanced functionality
+  fundingStatus?: {
+    isDue: boolean
+    nextTime: bigint
+    lastUpdateTime: bigint
+  }
+  lastFundingUpdate?: bigint
+  fundingInterval?: bigint
+  onLiquidate?: (userAddress: `0x${string}`) => void
+  isLiquidating?: boolean
+  liquidateError?: Error
+  userAddress?: `0x${string}`
 }
 
-export default function PositionPanel({ position, pnl, price, liquidationPrice, isLiquidatable, onClosePosition, isClosing, closePositionError, isClosePositionConfirmed, closePositionHash, isPaused, fundingPayment }: PositionPanelProps) {
+export default function PositionPanel({ 
+  position, 
+  pnl, 
+  price, 
+  liquidationPrice, 
+  isLiquidatable, 
+  onClosePosition, 
+  isClosing, 
+  closePositionError, 
+  isClosePositionConfirmed, 
+  closePositionHash, 
+  isPaused, 
+  fundingPayment,
+  fundingStatus,
+  lastFundingUpdate,
+  fundingInterval,
+  onLiquidate,
+  isLiquidating,
+  liquidateError,
+  userAddress
+}: PositionPanelProps) {
   const [activeTab, setActiveTab] = useState<"positions" | "orders" | "history">("positions")
 
   // Use real position data or fallback to mock data
@@ -41,8 +73,27 @@ export default function PositionPanel({ position, pnl, price, liquidationPrice, 
   // Format funding payment
   const fundingPaymentValue = fundingPayment ? Number(fundingPayment) / 1e18 : 0
 
+  // Calculate position duration
+  const positionDuration = position?.openTimestamp 
+    ? Date.now() / 1000 - Number(position.openTimestamp)
+    : 0
+
+  // Format time until next funding
+  const formatTimeUntil = (timestamp: bigint) => {
+    const now = Math.floor(Date.now() / 1000)
+    const diff = Number(timestamp) - now
+    if (diff <= 0) return "Due now"
+    const hours = Math.floor(diff / 3600)
+    const minutes = Math.floor((diff % 3600) / 60)
+    return `${hours}h ${minutes}m`
+  }
+
+  // Format funding interval
+  const fundingIntervalHours = fundingInterval ? Number(fundingInterval) / 3600 : 8
+
   // Validation for close position (similar to TradePanel validation)
   const canClosePosition = position?.exists && !isClosing && !isPaused
+  const canLiquidate = isLiquidatable && onLiquidate && userAddress && !isLiquidating
 
   // Handle close position function (similar to handleOpenPosition in TradePanel)
   const handleClosePosition = async () => {
@@ -67,6 +118,28 @@ export default function PositionPanel({ position, pnl, price, liquidationPrice, 
     } catch (error) {
       console.error('Error closing position:', error)
       // Error will be handled by the parent component and passed down as closePositionError
+    }
+  }
+
+  // Handle liquidation function
+  const handleLiquidate = async () => {
+    if (!canLiquidate) {
+      console.error('Cannot liquidate position:', {
+        isLiquidatable,
+        onLiquidate: !!onLiquidate,
+        userAddress,
+        isLiquidating,
+        canLiquidate
+      })
+      return
+    }
+    
+    try {
+      console.log('Liquidating position for user:', userAddress)
+      await onLiquidate(userAddress)
+    } catch (error) {
+      console.error('Error liquidating position:', error)
+      // Error will be handled by the parent component and passed down as liquidateError
     }
   }
 
@@ -147,6 +220,35 @@ export default function PositionPanel({ position, pnl, price, liquidationPrice, 
                     </div>
                   </div>
                 )}
+
+                {/* Enhanced Funding Information */}
+                <div className="bg-muted rounded p-4 border border-border">
+                  <p className="text-muted-foreground text-sm uppercase tracking-wide mb-3">Funding Information</p>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                      <p className="text-muted-foreground text-xs uppercase tracking-wide">Next Funding</p>
+                      <p className={`font-semibold mt-1 ${fundingStatus?.isDue ? "text-destructive" : "text-foreground"}`}>
+                        {fundingStatus?.nextTime ? formatTimeUntil(fundingStatus.nextTime) : "N/A"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground text-xs uppercase tracking-wide">Funding Interval</p>
+                      <p className="text-foreground font-semibold mt-1">{fundingIntervalHours}h</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground text-xs uppercase tracking-wide">Position Duration</p>
+                      <p className="text-foreground font-semibold mt-1">
+                        {Math.floor(positionDuration / 3600)}h {Math.floor((positionDuration % 3600) / 60)}m
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground text-xs uppercase tracking-wide">Last Update</p>
+                      <p className="text-foreground font-semibold mt-1">
+                        {lastFundingUpdate ? new Date(Number(lastFundingUpdate) * 1000).toLocaleTimeString() : "N/A"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </>
             ) : (
               <div className="text-center py-8">
@@ -172,14 +274,30 @@ export default function PositionPanel({ position, pnl, price, liquidationPrice, 
                       {roi >= 0 ? "+" : ""}
                       {roi.toFixed(2)}%
                     </p>
+                    {isLiquidatable && (
+                      <p className="text-destructive text-xs mt-1 font-semibold">
+                        ⚠️ Position is liquidatable!
+                      </p>
+                    )}
                   </div>
-                  <Button
-                    onClick={handleClosePosition}
-                    disabled={!canClosePosition}
-                    className="bg-destructive hover:bg-destructive/90 text-background font-semibold"
-                  >
-                    {isClosing ? "Closing..." : "Close Position"}
-                  </Button>
+                  <div className="flex gap-2">
+                    {canLiquidate && (
+                      <Button
+                        onClick={handleLiquidate}
+                        disabled={!canLiquidate}
+                        className="bg-orange-600 hover:bg-orange-700 text-background font-semibold"
+                      >
+                        {isLiquidating ? "Liquidating..." : "Liquidate"}
+                      </Button>
+                    )}
+                    <Button
+                      onClick={handleClosePosition}
+                      disabled={!canClosePosition}
+                      className="bg-destructive hover:bg-destructive/90 text-background font-semibold"
+                    >
+                      {isClosing ? "Closing..." : "Close Position"}
+                    </Button>
+                  </div>
                 </div>
               </div>
             )}
@@ -231,6 +349,17 @@ export default function PositionPanel({ position, pnl, price, liquidationPrice, 
                 )}
               </div>
             )}
+
+            {/* Liquidation Error */}
+            {liquidateError && (
+              <div className="p-3 bg-destructive/10 border border-destructive/20 rounded text-sm">
+                <p className="text-destructive font-semibold mb-1">Liquidation Failed</p>
+                <p className="text-destructive text-xs">{liquidateError.message}</p>
+                <p className="text-destructive text-xs mt-1">
+                  Check console for more details
+                </p>
+              </div>
+            )}
           </div>
         )}
 
@@ -243,35 +372,14 @@ export default function PositionPanel({ position, pnl, price, liquidationPrice, 
 
         {/* History Tab */}
         {activeTab === "history" && (
-          <div className="space-y-2">
-            {[
-              { type: "Long", size: 2000, price: 41500, pnl: 500, time: "2 hours ago" },
-              { type: "Short", size: 1500, price: 42200, pnl: -300, time: "5 hours ago" },
-              { type: "Long", size: 3000, price: 40800, pnl: 1200, time: "1 day ago" },
-            ].map((trade, i) => (
-              <div key={i} className="bg-muted rounded p-3 border border-border flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`px-2 py-1 rounded text-xs font-semibold ${
-                      trade.type === "Long" ? "bg-success/20 text-success" : "bg-destructive/20 text-destructive"
-                    }`}
-                  >
-                    {trade.type}
-                  </div>
-                  <div>
-                    <p className="text-foreground font-semibold">${trade.size.toLocaleString()}</p>
-                    <p className="text-muted-foreground text-xs">${trade.price.toLocaleString()}</p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className={`font-semibold ${trade.pnl >= 0 ? "text-success" : "text-destructive"}`}>
-                    {trade.pnl >= 0 ? "+" : ""}
-                    {trade.pnl.toLocaleString()}
-                  </p>
-                  <p className="text-muted-foreground text-xs">{trade.time}</p>
-                </div>
-              </div>
-            ))}
+          <div className="text-center py-8">
+            <p className="text-muted-foreground">No trade history available</p>
+            <p className="text-muted-foreground text-sm mt-2">Trade history tracking is coming soon</p>
+            <div className="mt-4 p-3 bg-muted/50 rounded border border-border">
+              <p className="text-muted-foreground text-xs">
+                💡 Historical trade data will be displayed here once the feature is implemented
+              </p>
+            </div>
           </div>
         )}
       </div>
