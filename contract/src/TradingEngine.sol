@@ -5,6 +5,7 @@ import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/Reentrancy
 import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 import {Vault} from "./Vault.sol";
 import {FundingRate} from "./FundingRate.sol";
+import {PythOracle} from "./oracle/PythOracle.sol";
 
 contract TradingEngine is ReentrancyGuard, Ownable {
     // Position structure
@@ -36,6 +37,7 @@ contract TradingEngine is ReentrancyGuard, Ownable {
     // Contract references
     Vault public vault;
     FundingRate public fundingRate;
+    PythOracle public pythOracle;
     
     // Events
     event PositionOpened(
@@ -64,6 +66,11 @@ contract TradingEngine is ReentrancyGuard, Ownable {
         fundingRate = FundingRate(_fundingRate);
         markPrice = _initialMarkPrice;
     }
+
+    function setPythOracle(address _pythOracle) external onlyOwner {
+        require(_pythOracle != address(0), "TradingEngine: invalid oracle");
+        pythOracle = PythOracle(_pythOracle);
+    }
     
     modifier onlyValidLeverage(uint256 leverage) {
         _onlyValidLeverage(leverage);
@@ -79,6 +86,22 @@ contract TradingEngine is ReentrancyGuard, Ownable {
         uint256 oldPrice = markPrice;
         markPrice = newPrice;
         emit MarkPriceUpdated(oldPrice, newPrice);
+    }
+
+    // Refresh mark price from Pyth via oracle using Hermes updates. Excess ETH is refunded by oracle.
+    function refreshMarkPrice(bytes[] calldata updates) external payable whenNotPaused {
+        require(address(pythOracle) != address(0), "TradingEngine: oracle not set");
+        pythOracle.updatePriceFeeds{value: msg.value}(updates);
+        (uint256 price18,, , ,) = pythOracle.getBtcUsdPrice();
+        require(price18 > 0, "TradingEngine: oracle returned zero");
+        uint256 oldPrice = markPrice;
+        markPrice = price18;
+        emit MarkPriceUpdated(oldPrice, price18);
+    }
+
+    function peekOraclePrice() external view returns (uint256 price18, uint256 publishTime) {
+        require(address(pythOracle) != address(0), "TradingEngine: oracle not set");
+        (price18, publishTime,, ,) = pythOracle.getBtcUsdPrice();
     }
     
     function openPosition(

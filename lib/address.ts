@@ -5,8 +5,13 @@
 //   Mock tBTC: 0x56C4C6F233565a13690bC9E97163Ae812892Cf03
 //   Initial Mark Price: $42,000
 
-export const vaultAddress = "0xB24849F48DBDf41327D9F9A1377901ABA29C3d49";
-export const tradingEngineAddress = "0x874B6bc5510C1986CF0e5c57c8F39f67C0893A76";
-export const fundingRateAddress = "0x6f68E03c20aeC7C3611F24701b58A4C83d4425d7";
-export const tBTCAddress = "0xDD9FA2F585119062d19e601eD2316BeeFbcA59F8";
+export const vaultAddress = "0xaA030aec54CC7D7Cc5cfb8c62D496fB14E490bBc";
+export const tradingEngineAddress = "0xdC97ff41a0A8E335c71A98f81278073a998604bc";
+export const fundingRateAddress = "0x944f3C5A9336Bebbdc74Ee90d1b2B372D92a41A6";
+export const tBTCAddress = "0xF9546bafb2d01Bf57961603f7e96B345d80844fD";
 export const initialMarkPrice = 42000e18;
+
+// Pyth (Mezo testnet)
+export const PYTH_ADDRESS_MEZO_TESTNET = "0x2880aB155794e7179c9eE2e38200202908C17B43";
+// TODO: set the actual BTC/USD price feed id for Mezo testnet
+export const PYTH_BTCUSD_PRICE_ID = "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43"
