@@ -12,17 +12,12 @@ import PositionPanel from "@/components/position-panel"
 
 // Import contract hooks
 import {
-  useTradingEngineMarkPrice,
-  useTradingEnginePosition,
-  useTradingEngineLiquidationPrice,
-  useTradingEngineIsLiquidatable,
-  useTradingEngineConstants,
-  useTradingEngineOpenPosition,
-  useTradingEngineClosePosition,
-  useTradingEnginePaused,
-  useTradingEngineLiquidate,
+  // consolidated trading info hooks
   useTradingEngineInfo,
   useTradingEnginePositionInfo,
+  useTradingEngineOpenPosition,
+  useTradingEngineClosePosition,
+  useTradingEngineLiquidate,
   useContractSetup,
   useVaultBalance,
   useVaultDeposit,
@@ -42,18 +37,23 @@ import {
   useFundingRateTradingEngine,
   useFundingRateConstants,
   useFundingRateInfo,
-  useFundingRateStatus
+  useFundingRateStatus,
+  useFundingRateForPosition,
+  useFundingRateApplyPayment
 } from "@/hooks"
 
 export default function Home() {
   const { address: userAddress } = useAccount()
   
   // Real blockchain data
-  const { data: markPrice } = useTradingEngineMarkPrice()
-  const { data: position } = useTradingEnginePosition(userAddress)
-  const { data: liquidationPrice } = useTradingEngineLiquidationPrice(userAddress)
-  const { data: isLiquidatable } = useTradingEngineIsLiquidatable(userAddress)
-  const { data: isPaused } = useTradingEnginePaused()
+  const tradingInfo = useTradingEngineInfo()
+  const positionInfo = useTradingEnginePositionInfo(userAddress)
+  const markPrice = tradingInfo.markPrice.data as bigint | undefined
+  const isPaused = tradingInfo.paused.data as boolean | undefined
+  const tradingConstants = tradingInfo.constants
+  const position = positionInfo.position.data
+  const liquidationPrice = positionInfo.liquidationPrice.data
+  const isLiquidatable = positionInfo.isLiquidatable.data
   const { data: vaultBalance, refetch: refetchVaultBalance } = useVaultBalance(userAddress)
   const { data: vaultOwner } = useVaultOwner()
   const { data: vaultTradingEngine } = useVaultTradingEngine()
@@ -65,7 +65,6 @@ export default function Home() {
   const { data: isFundingDue } = useFundingRateIsDue()
   const { data: lastFundingUpdate } = useFundingRateLastUpdateTime()
   const { data: fundingTradingEngine } = useFundingRateTradingEngine()
-  const tradingConstants = useTradingEngineConstants()
   const fundingConstants = useFundingRateConstants()
   const fundingStatus = useFundingRateStatus()
   const vaultInfo = useVaultInfo()
@@ -93,8 +92,16 @@ export default function Home() {
   // Calculate price change for header
   const priceChange = markPrice ? ((Number(markPrice) / 1e18) - 42000) / 42000 * 100 : 0
   
-  // Calculate funding payment if position exists
-  const { data: fundingPayment } = useFundingRateCalculatePayment(
+  // Funding for current position (grouped hook)
+  const { fundingPayment: fundingPaymentQuery } = useFundingRateForPosition(
+    (position as any)?.size || BigInt(0),
+    (position as any)?.isLong || false
+  )
+  const fundingPayment = fundingPaymentQuery.data as bigint | undefined
+
+  // Read-only preview of applyFundingPayment (restricted to TradingEngine on-chain)
+  // This mirrors calculateFundingPayment and is used for parity/visibility only
+  const _applyFundingPreview = useFundingRateApplyPayment(
     (position as any)?.size || BigInt(0),
     (position as any)?.isLong || false
   )
@@ -210,7 +217,7 @@ export default function Home() {
             />
           </div>
         </div>
-
+        <div>hiiiiiiiiiiii</div>
         {/* Position Panel */}
         <div className="mt-6">
           <PositionPanel 

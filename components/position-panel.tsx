@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { useToast } from "@/hooks/use-toast"
 
 interface PositionPanelProps {
   position?: {
@@ -61,6 +62,7 @@ export default function PositionPanel({
   userAddress
 }: PositionPanelProps) {
   const [activeTab, setActiveTab] = useState<"positions" | "orders" | "history">("positions")
+  const { toast } = useToast()
 
   // Use real position data or fallback to mock data
   const positionSize = position?.exists ? Number(position.size) / 1e18 : 0
@@ -247,6 +249,30 @@ export default function PositionPanel({
                         {lastFundingUpdate ? new Date(Number(lastFundingUpdate) * 1000).toLocaleTimeString() : "N/A"}
                       </p>
                     </div>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between">
+                    <div>
+                      <span
+                        className={`inline-flex items-center rounded px-2 py-1 text-xs font-medium border ${
+                          fundingStatus?.isDue ? "bg-primary/10 border-primary/20 text-primary" : "bg-muted/50 border-border text-muted-foreground"
+                        }`}
+                      >
+                        {fundingStatus?.isDue ? "Funding due" : "Not due"}
+                      </span>
+                    </div>
+                    <Button
+                      size="sm"
+                      disabled={!position?.exists || !fundingStatus?.isDue}
+                      onClick={() =>
+                        toast({
+                          title: "Apply funding",
+                          description: "Funding is applied by the TradingEngine during position operations.",
+                        })
+                      }
+                      className="font-semibold"
+                    >
+                      Apply Funding
+                    </Button>
                   </div>
                 </div>
               </>
