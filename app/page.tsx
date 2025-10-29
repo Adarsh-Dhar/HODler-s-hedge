@@ -39,7 +39,8 @@ import {
   useFundingRateInfo,
   useFundingRateStatus,
   useFundingRateForPosition,
-  useFundingRateApplyPayment
+  useFundingRateApplyPayment,
+  useBTCPrice
 } from "@/hooks"
 
 export default function Home() {
@@ -52,6 +53,7 @@ export default function Home() {
   const isPaused = tradingInfo.paused.data as boolean | undefined
   const tradingConstants = tradingInfo.constants
   const position = positionInfo.position.data
+  const refetchPosition = positionInfo.refetchPosition
   const liquidationPrice = positionInfo.liquidationPrice.data
   const isLiquidatable = positionInfo.isLiquidatable.data
   const { data: vaultBalance, refetch: refetchVaultBalance } = useVaultBalance(userAddress)
@@ -78,19 +80,48 @@ export default function Home() {
   const { withdraw, isPending: isWithdrawing, error: withdrawError, isConfirmed: isWithdrawConfirmed, hash: withdrawHash } = useVaultWithdraw()
   const { approve, isPending: isApproving, error: approveError, isConfirmed: isApproveConfirmed } = useTBTCApprove()
   
-  // Calculate PnL from position data
-  const calculatePnL = () => {
-    if (!position || !markPrice || !(position as any)?.exists) return 0
-    const priceDiff = Number(markPrice) - Number((position as any).entryPrice)
-    return (position as any).isLong ? priceDiff : -priceDiff
+  // Fetch real-time BTC price from API (same as chart panel)
+  const { data: btcPriceData } = useBTCPrice({ refreshInterval: 30000 })
+  const realTimePrice = btcPriceData?.price || (markPrice ? Number(markPrice) / 1e18 : 42850)
+  
+  // Calculate unrealized PnL using real-time BTC price
+  const calcUnrealizedPnL = () => {
+    try {
+      if (!position || !(position as any)?.exists) return { tbtc: BigInt(0), usd: BigInt(0) }
+      const entry = (position as any).entryPrice as bigint // 1e18
+      const size = (position as any).size as bigint // 1e18 tBTC value (size in tBTC)
+      if (entry === BigInt(0)) return { tbtc: BigInt(0), usd: BigInt(0) }
+      
+      // Convert real-time price to bigint (1e18 precision)
+      const currentPriceBigInt = BigInt(Math.floor(realTimePrice * 1e18))
+      
+      // Calculate price difference based on position direction
+      // For long: profit if current > entry (price goes up)
+      // For short: profit if entry > current (price goes down)
+      const diff = (position as any).isLong 
+        ? (currentPriceBigInt - entry)
+        : (entry - currentPriceBigInt)
+
+      // PnL in tBTC = (size_tbtc * price_diff_usd) / entry_price_usd
+      const pnlTbtc = (size * diff) / entry // 1e18 tBTC
+
+      // PnL in USD = pnl_tbtc * current_price_usd
+      const pnlUsd = (pnlTbtc * currentPriceBigInt) / BigInt("1000000000000000000") // 1e18 USD
+
+      return { tbtc: pnlTbtc, usd: pnlUsd }
+    } catch (error) {
+      console.error('Error calculating PnL:', error)
+      return { tbtc: BigInt(0), usd: BigInt(0) }
+    }
   }
   
-  // Get current price (fallback to mock if no blockchain data)
-  const currentPrice = markPrice ? Number(markPrice) / 1e18 : 42850
-  const currentPnL = calculatePnL()
+  // Get current price (use real-time API price, fallback to mark price, then default)
+  const currentPrice = realTimePrice
+  const currentPnL = calcUnrealizedPnL()
   
-  // Calculate price change for header
-  const priceChange = markPrice ? ((Number(markPrice) / 1e18) - 42000) / 42000 * 100 : 0
+  // Calculate price change for header (using real-time price)
+  const basePrice = 42000 // Reference price for change calculation
+  const priceChange = ((realTimePrice - basePrice) / basePrice) * 100
   
   // Funding for current position (grouped hook)
   const { fundingPayment: fundingPaymentQuery } = useFundingRateForPosition(
@@ -129,6 +160,20 @@ export default function Home() {
       })
     }
   }, [isDepositConfirmed, refetchVaultBalance, vaultBalance])
+
+  // Refetch position data after successful open or close
+  useEffect(() => {
+    if (isOpenPositionConfirmed || isClosePositionConfirmed) {
+      console.log('Position transaction confirmed, refetching position data...')
+      console.log('Current position before refetch:', position)
+      if (refetchPosition) {
+        refetchPosition().then((result) => {
+          console.log('Position after refetch:', result.data)
+          console.log('Entry price:', result.data ? Number((result.data as any)?.entryPrice) / 1e18 : 'N/A')
+        })
+      }
+    }
+  }, [isOpenPositionConfirmed, isClosePositionConfirmed, refetchPosition])
 
   return (
     <div className="min-h-screen bg-background">
@@ -217,12 +262,12 @@ export default function Home() {
             />
           </div>
         </div>
-        <div>hiiiiiiiiiiii</div>
         {/* Position Panel */}
         <div className="mt-6">
-          <PositionPanel 
+            <PositionPanel 
             position={position as any}
-            pnl={currentPnL}
+            pnlTbtc={currentPnL.tbtc}
+            pnlUsd={currentPnL.usd}
             price={currentPrice}
             liquidationPrice={liquidationPrice as bigint}
             isLiquidatable={isLiquidatable as boolean}

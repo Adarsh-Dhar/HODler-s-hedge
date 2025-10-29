@@ -15,7 +15,8 @@ interface PositionPanelProps {
     openTimestamp: bigint
     exists: boolean
   }
-  pnl: number
+  pnlTbtc?: bigint
+  pnlUsd?: bigint
   price: number
   liquidationPrice?: bigint
   isLiquidatable?: boolean
@@ -42,7 +43,8 @@ interface PositionPanelProps {
 
 export default function PositionPanel({ 
   position, 
-  pnl, 
+  pnlTbtc,
+  pnlUsd,
   price, 
   liquidationPrice, 
   isLiquidatable, 
@@ -66,11 +68,29 @@ export default function PositionPanel({
 
   // Use real position data or fallback to mock data
   const positionSize = position?.exists ? Number(position.size) / 1e18 : 0
-  const entryPrice = position?.exists ? Number(position.entryPrice) / 1e18 : 42000
+  // Properly handle entryPrice conversion from BigInt (1e18 precision)
+  const entryPriceRaw = position?.exists && position.entryPrice ? position.entryPrice : BigInt(0)
+  const entryPrice = position?.exists && entryPriceRaw > BigInt(0) 
+    ? Number(entryPriceRaw) / 1e18 
+    : (position?.exists ? price : 42000) // If position exists but entryPrice is 0, use current price as fallback
+  
+  // Debug logging for entry price
+  if (position?.exists) {
+    console.log('PositionPanel - Entry Price Debug:', {
+      exists: position.exists,
+      entryPriceRaw: entryPriceRaw.toString(),
+      entryPriceFormatted: entryPrice,
+      entryPriceType: typeof position.entryPrice,
+      positionFull: position
+    })
+  }
+  
   const markPrice = price
   const margin = position?.exists ? Number(position.margin) / 1e18 : 0
   const liquidationPriceValue = liquidationPrice ? Number(liquidationPrice) / 1e18 : 39900
-  const roi = margin > 0 ? (pnl / margin) * 100 : 0
+  const pnlTbtcNum = pnlTbtc !== undefined ? Number(pnlTbtc) / 1e18 : 0
+  const pnlUsdNum = pnlUsd !== undefined ? Number(pnlUsd) / 1e18 : 0
+  const roi = margin > 0 ? (pnlTbtcNum / margin) * 100 : 0
   
   // Format funding payment
   const fundingPaymentValue = fundingPayment ? Number(fundingPayment) / 1e18 : 0
@@ -194,12 +214,14 @@ export default function PositionPanel({
                     </div>
                     <div>
                       <p className="text-muted-foreground text-xs uppercase tracking-wide">PnL</p>
-                      <p
-                        className={`font-bold mt-1 text-lg animate-pulse-subtle ${pnl >= 0 ? "text-success" : "text-destructive"}`}
-                      >
-                        {pnl >= 0 ? "+" : ""}
-                        {pnl.toLocaleString("en-US", { maximumFractionDigits: 2 })}
-                      </p>
+                      <div className="mt-1">
+                        <p className={`font-bold text-lg animate-pulse-subtle ${pnlUsdNum >= 0 ? "text-success" : "text-destructive"}`}>
+                          {pnlUsdNum >= 0 ? "+" : ""}${Math.abs(pnlUsdNum).toLocaleString("en-US", { maximumFractionDigits: 2 })}
+                        </p>
+                        <p className={`text-xs ${pnlTbtcNum >= 0 ? "text-success" : "text-destructive"}`}>
+                          {pnlTbtcNum >= 0 ? "+" : ""}{Math.abs(pnlTbtcNum).toFixed(6)} tBTC
+                        </p>
+                      </div>
                     </div>
                     <div>
                       <p className="text-muted-foreground text-xs uppercase tracking-wide">Liquidation</p>
@@ -291,12 +313,12 @@ export default function PositionPanel({
             {/* ROI Display - Only show if position exists */}
             {position?.exists && (
               <div
-                className={`rounded p-4 border ${pnl >= 0 ? "bg-success-subtle border-success/30" : "bg-destructive-subtle border-destructive/30"}`}
+                className={`rounded p-4 border ${pnlUsdNum >= 0 ? "bg-success-subtle border-success/30" : "bg-destructive-subtle border-destructive/30"}`}
               >
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-muted-foreground text-sm">Return on Investment</p>
-                    <p className={`text-2xl font-bold mt-1 ${pnl >= 0 ? "text-success" : "text-destructive"}`}>
+                    <p className={`text-2xl font-bold mt-1 ${pnlUsdNum >= 0 ? "text-success" : "text-destructive"}`}>
                       {roi >= 0 ? "+" : ""}
                       {roi.toFixed(2)}%
                     </p>

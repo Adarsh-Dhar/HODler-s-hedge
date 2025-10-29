@@ -1,4 +1,5 @@
-import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
+import { useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi'
+import { parseUnits } from 'viem'
 import { useAccount } from 'wagmi'
 import { tradingEngineAddress, vaultAddress, fundingRateAddress } from '@/lib/address'
 import { TradingEngineABI } from '@/lib/abi/TradingEngine'
@@ -125,7 +126,9 @@ export function useTradingEnginePaused() {
 // ============================================================================
 
 export function useTradingEngineOpenPosition() {
-  const { writeContract, data: hash, isPending, error } = useWriteContract()
+  const { writeContractAsync, data: hash, isPending, error } = useWriteContract()
+  const { data: currentMarkPrice } = useTradingEngineMarkPrice()
+  const publicClient = usePublicClient()
   
   const openPosition = async (isLong: boolean, marginAmount: bigint, leverage: bigint) => {
     try {
@@ -136,7 +139,66 @@ export function useTradingEngineOpenPosition() {
         tradingEngineAddress
       })
       
-      await writeContract({
+      // Fetch current UI price
+      const priceRes = await fetch('/api/price')
+      if (!priceRes.ok) throw new Error(`Price fetch failed: ${priceRes.status}`)
+      const { data } = await priceRes.json() as { data?: { price?: number } }
+      const uiPrice = data?.price
+      if (!uiPrice || !isFinite(uiPrice) || uiPrice <= 0) {
+        throw new Error('Invalid price from API')
+      }
+
+      // Convert to uint256 (1e18) string for on-chain usage (client-side scaling)
+      const scaledPrice: bigint = parseUnits(uiPrice.toString(), 18)
+      const scaledPriceStr = scaledPrice.toString()
+
+      // Post to route for validation/echo (no on-chain update server-side)
+      const markPost = await fetch('/api/mark-price', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ price: scaledPriceStr })
+      })
+      if (!markPost.ok) {
+        const err = await markPost.json().catch(() => ({}))
+        throw new Error(`Mark price post failed: ${err?.error || markPost.status}`)
+      }
+
+      // Update markPrice on-chain from client wallet (must be contract owner)
+      const setHash = await writeContractAsync({
+        address: tradingEngineAddress,
+        abi: TradingEngineABI,
+        functionName: 'setMarkPrice',
+        args: [scaledPrice],
+      })
+      if (publicClient) {
+        await publicClient.waitForTransactionReceipt({ hash: setHash })
+      }
+
+      // Check current on-chain markPrice (read from hook)
+      const currentMarkPriceNum = currentMarkPrice ? Number(currentMarkPrice) / 1e18 : 0
+      const priceDiff = currentMarkPriceNum > 0 ? Math.abs(uiPrice - currentMarkPriceNum) : 0
+      const priceDiffPercent = currentMarkPriceNum > 0 
+        ? (priceDiff / Math.max(uiPrice, currentMarkPriceNum)) * 100 
+        : 0
+      
+      console.log('Price comparison:', {
+        uiPrice,
+        onChainMarkPrice: currentMarkPriceNum,
+        difference: priceDiff,
+        percentDiff: priceDiffPercent.toFixed(2) + '%'
+      })
+      
+      // Warn if on-chain price is significantly different
+      if (priceDiffPercent > 1 && currentMarkPriceNum > 0) {
+        console.warn(`⚠️ On-chain markPrice ($${currentMarkPriceNum.toLocaleString()}) differs from current price ($${uiPrice.toLocaleString()}) by ${priceDiffPercent.toFixed(2)}%`)
+        console.warn('⚠️ Entry price will be set to on-chain markPrice, not current market price')
+        console.warn('⚠️ Owner must update markPrice via setMarkPrice() for accurate entry price')
+      }
+      
+      console.log('Opening position. Entry price will be synced to:', uiPrice)
+      
+      // Open the position - entryPrice will be set to current on-chain markPrice
+      await writeContractAsync({
         address: tradingEngineAddress,
         abi: TradingEngineABI,
         functionName: 'openPosition',
@@ -186,6 +248,20 @@ export function useTradingEngineClosePosition() {
   console.log('useTradingEngineClosePosition')
   const { address: userAddress } = useAccount()
   const { writeContract, data: hash, isPending, error } = useWriteContract()
+  
+  const updateMarkPrice = async () => {
+    try {
+      // Oracle flow disabled: optionally fetch price for logging only
+      const priceRes = await fetch('/api/price')
+      if (!priceRes.ok) throw new Error(`Price fetch failed: ${priceRes.status}`)
+      const { data } = await priceRes.json()
+      if (!data?.price) throw new Error('Price missing in response')
+      return true
+    } catch (e) {
+      console.error('updateMarkPrice failed:', e)
+      throw e
+    }
+  }
   
   // Check if user has a position before allowing close
   const { data: position, isLoading: positionLoading, error: positionError } = useReadContract({
@@ -293,7 +369,10 @@ export function useTradingEngineClosePosition() {
       })
       
       console.log('=== CLOSE POSITION DEBUG END ===')
-      
+
+      // Oracle disabled: skip on-chain mark price update (fetch used only for logging/consistency)
+      await updateMarkPrice()
+
       // Now try the actual closePosition call
       console.log('Attempting closePosition call...')
       await writeContract({
@@ -430,12 +509,13 @@ export function useTradingEngineInfo() {
 }
 
 export function useTradingEnginePositionInfo(userAddress?: `0x${string}`) {
-  const position = useTradingEnginePosition(userAddress)
+  const positionQuery = useTradingEnginePosition(userAddress)
   const liquidationPrice = useTradingEngineLiquidationPrice(userAddress)
   const isLiquidatable = useTradingEngineIsLiquidatable(userAddress)
 
   return {
-    position,
+    position: positionQuery,
+    refetchPosition: positionQuery.refetch,
     liquidationPrice,
     isLiquidatable,
   }
