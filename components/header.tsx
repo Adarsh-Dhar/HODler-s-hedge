@@ -1,6 +1,9 @@
 "use client"
 
 import { ConnectButton } from "@rainbow-me/rainbowkit"
+import { useAccount } from "wagmi"
+import { useIsVaultOwner } from "@/hooks"
+import Link from "next/link"
 
 interface HeaderProps {
   fundingRate?: bigint
@@ -10,6 +13,9 @@ interface HeaderProps {
 }
 
 export default function Header({ fundingRate, nextFundingTime, isFundingDue, priceChange }: HeaderProps) {
+  const { address } = useAccount()
+  const { isOwner } = useIsVaultOwner(address)
+
   return (
     <header className="border-b border-border bg-card">
       <div className="px-4 md:px-6 py-4">
@@ -50,8 +56,20 @@ export default function Header({ fundingRate, nextFundingTime, isFundingDue, pri
             </div>
           </div>
 
-          {/* Wallet Button */}
-          <div>
+          {/* Navigation & Wallet */}
+          <div className="flex items-center gap-4">
+            {/* Admin Link - Only show for owner */}
+            {isOwner && (
+              <Link 
+                href="/admin"
+                className="flex items-center gap-2 px-3 py-2 bg-orange-600 hover:bg-orange-700 text-background rounded text-sm font-semibold transition-colors"
+              >
+                <span className="text-sm">👑</span>
+                Admin
+              </Link>
+            )}
+            
+            {/* Wallet Button */}
             <ConnectButton />
           </div>
         </div>

@@ -1,7 +1,8 @@
 "use client"
 
 import { Card } from "@/components/ui/card"
-import { useBTCPrice } from "@/hooks"
+import { useBTCPrice, useIsVaultOwner } from "@/hooks"
+import { useAccount } from "wagmi"
 import { useEffect, useState } from "react"
 
 interface ChartPanelProps {
@@ -35,6 +36,9 @@ export default function ChartPanel({
   const { data: btcData, loading, error, lastUpdated } = useBTCPrice({ refreshInterval: 30000 })
   const [priceHistory, setPriceHistory] = useState<number[]>([])
   const [showContractInfo, setShowContractInfo] = useState(false)
+  
+  const { address } = useAccount()
+  const { isOwner } = useIsVaultOwner(address)
   
   // Use real-time price if available, otherwise fallback to prop
   const currentPrice = btcData?.price || fallbackPrice || 42000
@@ -291,6 +295,12 @@ export default function ChartPanel({
                       Funding {isFundingDue ? "Due" : "Active"}
                     </span>
                   </div>
+                  {isOwner && (
+                    <div className="flex items-center gap-1">
+                      <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                      <span className="text-orange-600 font-semibold">Admin Access</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

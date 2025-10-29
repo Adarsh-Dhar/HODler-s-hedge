@@ -5,6 +5,8 @@
 export * from './use-vault'
 export * from './use-trading'
 export * from './use-funding'
+export * from './use-vault-admin'
+export * from './use-vault-events'
 
 // ============================================================================
 // UTILITY HOOKS
