@@ -1,10 +1,12 @@
 "use client"
 
 import { useState } from "react"
+import { useAccount, useReadContract } from "wagmi"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { useVaultEmergencyWithdraw, useTBTCBalance } from "@/hooks"
-import { tBTCAddress } from "@/lib/address"
+import { useVaultEmergencyWithdraw } from "@/hooks"
+import { tBTCAddress, vaultAddress } from "@/lib/address"
+import { ERC20ABI } from "@/lib/abi/ERC20"
 
 interface EmergencyControlsProps {
   vaultBalance?: bigint
@@ -17,11 +19,42 @@ export default function EmergencyControls({ vaultBalance, isOwner }: EmergencyCo
   const [showConfirmation, setShowConfirmation] = useState(false)
   const [confirmationText, setConfirmationText] = useState("")
   
+  const { address: userAddress } = useAccount()
   const { emergencyWithdraw, isPending, isConfirming, isConfirmed, error, hash } = useVaultEmergencyWithdraw()
-  const { data: tokenBalance } = useTBTCBalance()
 
-  const vaultBalanceFormatted = vaultBalance ? Number(vaultBalance) / 1e8 : 0
-  const tokenBalanceFormatted = tokenBalance ? Number(tokenBalance) / 1e8 : 0
+  // Dynamically read selected token balance and decimals for the VAULT address (not the user)
+  const { data: rawTokenBalance } = useReadContract({
+    address: tokenAddress,
+    abi: ERC20ABI,
+    functionName: 'balanceOf',
+    args: [vaultAddress],
+    query: { enabled: !!tokenAddress },
+  })
+
+  // Also read the user's token balance for clarity in UI
+  const { data: rawUserTokenBalance } = useReadContract({
+    address: tokenAddress,
+    abi: ERC20ABI,
+    functionName: 'balanceOf',
+    args: userAddress ? [userAddress] : undefined,
+    query: { enabled: !!userAddress && !!tokenAddress },
+  })
+
+  const { data: tokenDecimals } = useReadContract({
+    address: tokenAddress,
+    abi: ERC20ABI,
+    functionName: 'decimals',
+    query: { enabled: !!tokenAddress },
+  })
+
+  const decimalsNumber = Number(tokenDecimals ?? 8)
+  const vaultBalanceFormatted = vaultBalance ? Number(vaultBalance) / Math.pow(10, decimalsNumber) : 0
+  const tokenBalanceFormatted = rawTokenBalance
+    ? Number(rawTokenBalance) / Math.pow(10, decimalsNumber)
+    : 0
+  const userTokenBalanceFormatted = rawUserTokenBalance
+    ? Number(rawUserTokenBalance) / Math.pow(10, decimalsNumber)
+    : 0
 
   const handleEmergencyWithdraw = async () => {
     if (!showConfirmation || confirmationText !== "EMERGENCY") {
@@ -29,7 +62,8 @@ export default function EmergencyControls({ vaultBalance, isOwner }: EmergencyCo
     }
 
     try {
-      const amountBigInt = BigInt(Math.floor(Number(amount) * 1e8))
+      const factor = Math.pow(10, decimalsNumber)
+      const amountBigInt = BigInt(Math.floor(Number(amount) * factor))
       await emergencyWithdraw(tokenAddress, amountBigInt)
       
       // Reset form on success
@@ -95,8 +129,13 @@ export default function EmergencyControls({ vaultBalance, isOwner }: EmergencyCo
               </Button>
             </div>
             <p className="text-muted-foreground text-xs mt-1">
-              Token balance: {tokenBalanceFormatted.toFixed(4)} BTC
+              Vault token balance: {tokenBalanceFormatted.toFixed(4)} BTC
             </p>
+            {userAddress && (
+              <p className="text-muted-foreground text-xs">
+                Your token balance: {userTokenBalanceFormatted.toFixed(4)} BTC
+              </p>
+            )}
           </div>
 
           {/* Amount Input */}

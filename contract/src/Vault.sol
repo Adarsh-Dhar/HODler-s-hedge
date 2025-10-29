@@ -88,9 +88,13 @@ contract Vault is ReentrancyGuard, Ownable {
         emit MarginUnlocked(user, amount, pnl);
     }
     
-    // Emergency function to recover stuck tokens (only owner)
+    // Emergency function to recover tokens (including tBTC) to the owner
     function emergencyWithdraw(address token, uint256 amount) external onlyOwner {
-        require(token != address(TBTC), "Vault: Use regular withdraw for tBTC");
-        require(ITBTC(token).transfer(owner(), amount), "Vault: Emergency transfer failed");
+        if (token == address(TBTC)) {
+            // Allow owner to recover tBTC from the vault in emergencies
+            require(TBTC.transfer(owner(), amount), "Vault: Emergency tBTC transfer failed");
+        } else {
+            require(ITBTC(token).transfer(owner(), amount), "Vault: Emergency transfer failed");
+        }
     }
 }

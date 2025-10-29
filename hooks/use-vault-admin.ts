@@ -121,13 +121,14 @@ export function useVaultRenounceOwnership() {
 export function useIsVaultOwner(userAddress?: `0x${string}`) {
   const { data: owner, isLoading, error } = useVaultOwner()
   
-  const isOwner = owner?.toLowerCase() === userAddress?.toLowerCase()
+  const ownerStr = typeof owner === 'string' ? owner : undefined
+  const isOwner = ownerStr?.toLowerCase() === userAddress?.toLowerCase()
   
   return {
     isOwner: !!isOwner,
     isLoading,
     error,
-    owner: owner as string | undefined,
+    owner: ownerStr,
   }
 }
 
