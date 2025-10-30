@@ -6,6 +6,7 @@ import {Vault} from "../src/Vault.sol";
 import {TradingEngine} from "../src/TradingEngine.sol";
 import {FundingRate} from "../src/FundingRate.sol";
 import {MockTBTC} from "../src/MockTBTC.sol";
+import {InsuranceFund} from "../src/InsuranceFund.sol";
 
 contract DeployScript is Script {
     // Initial BTC price: $42,000 (in wei)
@@ -22,6 +23,10 @@ contract DeployScript is Script {
         uint256 currentNonce = vm.getNonce(deployer);
         console.log("Current nonce:", currentNonce);
         
+        // External token addresses
+        address musd = vm.envOr("MUSD_ADDRESS", address(0));
+        require(musd != address(0), "MUSD_ADDRESS not set");
+
         vm.startBroadcast(deployerPrivateKey);
         
         // Deploy MockTBTC first
@@ -47,11 +52,19 @@ contract DeployScript is Script {
             INITIAL_MARK_PRICE
         );
         console.log("TradingEngine deployed at:", address(tradingEngine));
+
+        // Deploy InsuranceFund
+        console.log("Deploying InsuranceFund...");
+        InsuranceFund insuranceFund = new InsuranceFund(musd);
+        console.log("InsuranceFund deployed at:", address(insuranceFund));
         
         // Set up cross-references after all contracts are deployed
         console.log("Setting up contract references...");
         vault.setTradingEngine(address(tradingEngine));
+        vault.setMusd(musd);
         fundingRate.setTradingEngine(address(tradingEngine));
+        tradingEngine.setInsuranceFund(address(insuranceFund));
+        insuranceFund.setTradingEngine(address(tradingEngine));
         
         vm.stopBroadcast();
         
@@ -59,6 +72,7 @@ contract DeployScript is Script {
         console.log("Vault:", address(vault));
         console.log("TradingEngine:", address(tradingEngine));
         console.log("FundingRate:", address(fundingRate));
+        console.log("InsuranceFund:", address(insuranceFund));
         console.log("MockTBTC:", address(tbtc));
         console.log("Initial Mark Price: $42,000");
         

@@ -9,11 +9,6 @@ via_ir = false
 verbosity = 2
 evm_version = "london"
 
-# Add your chain definitions *inside* the default profile
-[profile.default.chains]
-31611 = "mezo_testnet"
-686868 = "mezo"
-
 [rpc_endpoints]
 mezo_testnet = "https://rpc.test.mezo.org"
 mezo = "https://rpc.mezo.org"

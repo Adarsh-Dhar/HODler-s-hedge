@@ -9,6 +9,7 @@ import EmergencyControls from "./emergency-controls"
 import OwnershipManagement from "./ownership-management"
 import InternalMonitor from "./internal-monitor"
 import SystemHealth from "../system/system-health"
+import InsuranceFundCard from "./insurance-fund"
 
 interface AdminPanelProps {
   className?: string
@@ -181,6 +182,9 @@ export default function AdminPanel({ className }: AdminPanelProps) {
 
               {/* System Health */}
               <SystemHealth />
+
+              {/* Insurance Fund */}
+              <InsuranceFundCard />
             </div>
           )}
 

@@ -162,10 +162,12 @@ export function useVaultOwner() {
 export function useVaultInfo() {
   const tradingEngine = useVaultTradingEngine()
   const tbtc = useVaultTBTC()
+  const musd = useReadContract({ address: vaultAddress, abi: VaultABI, functionName: 'MUSD' })
 
   return {
     tradingEngine,
     tbtc,
+    musd,
     address: vaultAddress,
   }
 }
@@ -184,6 +186,29 @@ export function useTBTCBalance(userAddress?: `0x${string}`) {
       enabled: !!userAddress,
     },
   })
+}
+
+// =========================================================================
+// MUSD HELPERS
+// =========================================================================
+
+export function useVaultMUSDBalance(userAddress?: `0x${string}`) {
+  return useReadContract({
+    address: vaultAddress,
+    abi: VaultABI,
+    functionName: 'balanceOfMUSD',
+    args: userAddress ? [userAddress] : undefined,
+    query: { enabled: !!userAddress },
+  })
+}
+
+export function useVaultSetMUSD() {
+  const { writeContract, data: hash, isPending, error } = useWriteContract()
+  const setMUSD = (musd: `0x${string}`) => {
+    writeContract({ address: vaultAddress, abi: VaultABI, functionName: 'setMUSD', args: [musd] })
+  }
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash })
+  return { setMUSD, hash, isPending, isConfirming, isConfirmed, error }
 }
 
 export function useTBTCAllowance(owner?: `0x${string}`, spender?: `0x${string}`) {

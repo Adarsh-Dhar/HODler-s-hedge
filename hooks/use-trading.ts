@@ -89,6 +89,15 @@ export function useTradingEngineMarkPrice() {
   })
 }
 
+export function useTradingEngineOraclePrice() {
+  // Returns tuple [price18, publishTime]
+  return useReadContract({
+    address: tradingEngineAddress,
+    abi: TradingEngineABI,
+    functionName: 'peekOraclePrice',
+  })
+}
+
 export function useTradingEngineLiquidationPrice(userAddress?: `0x${string}`) {
   return useReadContract({
     address: tradingEngineAddress,
@@ -436,15 +445,43 @@ export function useTradingEngineClosePosition() {
 }
 
 export function useTradingEngineLiquidate() {
-  const { writeContract, data: hash, isPending, error } = useWriteContract()
+  const { writeContractAsync, data: hash, isPending, error } = useWriteContract()
+  const publicClient = usePublicClient()
   
-  const liquidate = (userAddress: `0x${string}`) => {
-    writeContract({
+  const liquidate = async (userAddress: `0x${string}`) => {
+    const txHash = await writeContractAsync({
       address: tradingEngineAddress,
       abi: TradingEngineABI,
       functionName: 'liquidate',
       args: [userAddress],
     })
+    if (!publicClient) return { txHash }
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash })
+
+    // Parse Liquidated event from logs (reward is in MUSD, 1e18 decimals)
+    let reward: bigint | undefined
+    let liquidator: `0x${string}` | undefined
+    let liquidatedUser: `0x${string}` | undefined
+    try {
+      const logs = receipt.logs || []
+      for (const log of logs) {
+        try {
+          const parsed = (window as any)?.viem?.decodeEventLog
+            ? (window as any).viem.decodeEventLog({ abi: TradingEngineABI as any, ...log })
+            : null
+          if (parsed && parsed.eventName === 'Liquidated') {
+            liquidatedUser = parsed.args.user
+            liquidator = parsed.args.liquidator
+            reward = parsed.args.reward
+            break
+          }
+        } catch (_) {
+          // ignore non-matching logs
+        }
+      }
+    } catch (_) {}
+
+    return { txHash, receipt, reward, liquidator, liquidatedUser }
   }
 
   const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
@@ -484,10 +521,17 @@ export function useTradingEngineConstants() {
     functionName: 'TRADING_FEE',
   })
 
+  const liquidationBonus = useReadContract({
+    address: tradingEngineAddress,
+    abi: TradingEngineABI,
+    functionName: 'LIQUIDATION_BONUS',
+  })
+
   return {
     maxLeverage,
     maintenanceMarginRatio,
     tradingFee,
+    liquidationBonus,
   }
 }
 

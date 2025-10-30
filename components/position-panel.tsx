@@ -18,6 +18,7 @@ interface PositionPanelProps {
   pnlTbtc?: bigint
   pnlUsd?: bigint
   price: number
+  oraclePrice?: number
   liquidationPrice?: bigint
   isLiquidatable?: boolean
   onClosePosition: () => Promise<void>
@@ -46,6 +47,7 @@ export default function PositionPanel({
   pnlTbtc,
   pnlUsd,
   price, 
+  oraclePrice,
   liquidationPrice, 
   isLiquidatable, 
   onClosePosition, 
@@ -207,6 +209,9 @@ export default function PositionPanel({
                       <p className="text-foreground font-semibold mt-1">
                         ${markPrice.toLocaleString("en-US", { maximumFractionDigits: 0 })}
                       </p>
+                      {oraclePrice !== undefined && (
+                        <p className="text-xs text-muted-foreground mt-1">Oracle: ${oraclePrice.toLocaleString("en-US", { maximumFractionDigits: 0 })}</p>
+                      )}
                     </div>
                     <div>
                       <p className="text-muted-foreground text-xs uppercase tracking-wide">Margin</p>

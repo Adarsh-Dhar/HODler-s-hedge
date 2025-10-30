@@ -4,8 +4,37 @@ pragma solidity ^0.8.13;
 import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 import {Vault} from "./Vault.sol";
+import {InsuranceFund} from "./InsuranceFund.sol";
 import {FundingRate} from "./FundingRate.sol";
 import {PythOracle} from "./oracle/PythOracle.sol";
+
+interface IVaultExtended {
+    function unlockMarginWithLiquidator(
+        address user,
+        uint256 amount,
+        int256 pnl,
+        address liquidator,
+        uint256 liquidatorRewardTbtc,
+        uint256 liquidatorRewardMusd
+    ) external;
+
+    function handleLiquidationSettlement(
+        address user,
+        uint256 tbtcMargin,
+        int256 totalPnl,
+        address liquidator,
+        uint256 liquidatorRewardMusd,
+        address insuranceFund,
+        uint256 insuranceDepositMusd
+    ) external;
+
+    function unlockMarginAndSettleMusd(
+        address user,
+        uint256 amountTbtc,
+        int256 pnlTbtc,
+        int256 pnlMusd
+    ) external;
+}
 
 contract TradingEngine is ReentrancyGuard, Ownable {
     // Position structure
@@ -30,6 +59,7 @@ contract TradingEngine is ReentrancyGuard, Ownable {
     
     // Maintenance margin ratio (5% for 20x max leverage)
     uint256 public constant MAINTENANCE_MARGIN_RATIO = 500; // 5% in basis points
+    uint256 public constant LIQUIDATION_BONUS = 500; // 5% bonus in basis points
     
     // Maximum leverage
     uint256 public constant MAX_LEVERAGE = 20;
@@ -38,6 +68,7 @@ contract TradingEngine is ReentrancyGuard, Ownable {
     Vault public vault;
     FundingRate public fundingRate;
     PythOracle public pythOracle;
+    InsuranceFund public insuranceFund;
     
     // Events
     event PositionOpened(
@@ -65,6 +96,18 @@ contract TradingEngine is ReentrancyGuard, Ownable {
         vault = Vault(_vault);
         fundingRate = FundingRate(_fundingRate);
         markPrice = _initialMarkPrice;
+    }
+
+    function setInsuranceFund(address _insuranceFund) external onlyOwner {
+        require(_insuranceFund != address(0), "TradingEngine: invalid IF");
+        insuranceFund = InsuranceFund(_insuranceFund);
+    }
+
+    function _getOraclePrice18() internal view returns (uint256) {
+        require(address(pythOracle) != address(0), "TradingEngine: oracle not set");
+        (uint256 price18,, , ,) = pythOracle.getBtcUsdPrice();
+        require(price18 > 0, "TradingEngine: oracle returned zero");
+        return price18;
     }
 
     function setPythOracle(address _pythOracle) external onlyOwner {
@@ -139,22 +182,32 @@ contract TradingEngine is ReentrancyGuard, Ownable {
         Position storage position = positions[msg.sender];
         require(position.exists, "TradingEngine: No position to close");
         
-        // Calculate PnL
-        int256 pnl = calculatePnL(position);
+        // Calculate PnL in tBTC
+        int256 pnlTbtc = calculatePnL(position);
         
         // Calculate funding payment
         int256 fundingPayment = fundingRate.applyFundingPayment(position.size, position.isLong);
         
-        // Total PnL including funding
-        int256 totalPnL = pnl - fundingPayment;
+        // Total PnL including funding (tBTC terms)
+        int256 totalPnlTbtc = pnlTbtc - fundingPayment;
+
+        // Convert PnL to MUSD using oracle (18 decimals price; tBTC has 8)
+        uint256 price18 = _getOraclePrice18();
+        // forge-lint: disable-next-line(unsafe-typecast)
+        int256 pnlMusd = (totalPnlTbtc * int256(price18)) / int256(1e8);
         
-        // Unlock margin and PnL in vault
-        vault.unlockMargin(msg.sender, position.margin, totalPnL);
+        // Unlock tBTC margin and settle MUSD accounting
+        IVaultExtended(address(vault)).unlockMarginAndSettleMusd(
+            msg.sender,
+            position.margin,
+            totalPnlTbtc,
+            pnlMusd
+        );
         
         // Clear position
         delete positions[msg.sender];
         
-        emit PositionClosed(msg.sender, totalPnL, markPrice, fundingPayment);
+        emit PositionClosed(msg.sender, totalPnlTbtc, markPrice, fundingPayment);
     }
     
     function liquidate(address user) external nonReentrant {
@@ -170,21 +223,49 @@ contract TradingEngine is ReentrancyGuard, Ownable {
         
         // Total PnL including funding
         int256 totalPnL = pnl - fundingPayment;
-        
-        // Liquidator gets remaining margin as reward
-        uint256 liquidatorReward = position.margin;
-        if (totalPnL > 0) {
-            // forge-lint: disable-next-line(unsafe-typecast)
-            liquidatorReward += uint256(totalPnL);
+
+        // Compute remaining margin in tBTC terms (if positive)
+        uint256 remainingTbtc = 0;
+        {
+            int256 rem = int256(position.margin) + totalPnL;
+            if (rem > 0) {
+                // forge-lint: disable-next-line(unsafe-typecast)
+                remainingTbtc = uint256(rem);
+            }
         }
-        
-        // Unlock margin (liquidator gets the reward)
-        vault.unlockMargin(user, position.margin, totalPnL);
+
+        // Compute oracle price for conversion to MUSD (18 decimals)
+        uint256 price18 = _getOraclePrice18();
+
+        // Convert values to MUSD (assume MUSD 18 decimals): tBTC has 8 decimals
+        uint256 marginMusd = (position.margin * price18) / 1e8;
+        uint256 remainingMusd = (remainingTbtc * price18) / 1e8;
+
+        // Max reward as % of collateral value in MUSD
+        uint256 maxRewardMusd = (marginMusd * LIQUIDATION_BONUS) / 10000;
+        uint256 liquidatorRewardMusd = remainingMusd < maxRewardMusd ? remainingMusd : maxRewardMusd;
+
+        // Excess that should go to Insurance Fund
+        uint256 insuranceDepositMusd = 0;
+        if (remainingMusd > liquidatorRewardMusd) {
+            insuranceDepositMusd = remainingMusd - liquidatorRewardMusd;
+        }
+
+        // Settle via Vault: do not return margin to user on liquidation; distribute MUSD
+        IVaultExtended(address(vault)).handleLiquidationSettlement(
+            user,
+            position.margin,
+            totalPnL,
+            msg.sender,
+            liquidatorRewardMusd,
+            address(insuranceFund),
+            insuranceDepositMusd
+        );
         
         // Clear position
         delete positions[user];
         
-        emit Liquidated(user, msg.sender, liquidatorReward);
+        emit Liquidated(user, msg.sender, liquidatorRewardMusd);
     }
     
     function getPosition(address user) external view returns (Position memory) {
@@ -204,8 +285,8 @@ contract TradingEngine is ReentrancyGuard, Ownable {
         // For short: liquidationPrice = entryPrice * (1 + (1/leverage) * (1 - maintenanceMarginRatio))
         
         // Calculate maintenance margin (currently unused but kept for future implementation)
-        // uint256 maintenanceMargin = (position.size * MAINTENANCE_MARGIN_RATIO) / 100000;
-        uint256 priceImpact = (position.entryPrice * (100000 - MAINTENANCE_MARGIN_RATIO)) / (position.leverage * 100000);
+        // uint256 maintenanceMargin = (position.size * MAINTENANCE_MARGIN_RATIO) / 10000;
+        uint256 priceImpact = (position.entryPrice * (10000 - MAINTENANCE_MARGIN_RATIO)) / (position.leverage * 10000);
         
         if (position.isLong) {
             return position.entryPrice - priceImpact;
@@ -219,21 +300,23 @@ contract TradingEngine is ReentrancyGuard, Ownable {
         if (!position.exists) return false;
         
         uint256 liquidationPrice = this.calculateLiquidationPrice(user);
-        
+        uint256 oraclePrice = _getOraclePrice18();
+
         if (position.isLong) {
-            return markPrice <= liquidationPrice;
+            return oraclePrice <= liquidationPrice;
         } else {
-            return markPrice >= liquidationPrice;
+            return oraclePrice >= liquidationPrice;
         }
     }
     
     function calculatePnL(Position memory position) internal view returns (int256) {
+        uint256 price = _getOraclePrice18();
         if (position.isLong) {
-            // PnL = (markPrice - entryPrice) * size / entryPrice
-            return int256((markPrice - position.entryPrice) * position.size / position.entryPrice);
+            // PnL = (price - entryPrice) * size / entryPrice
+            return int256((price - position.entryPrice) * position.size / position.entryPrice);
         } else {
-            // PnL = (entryPrice - markPrice) * size / entryPrice
-            return int256((position.entryPrice - markPrice) * position.size / position.entryPrice);
+            // PnL = (entryPrice - price) * size / entryPrice
+            return int256((position.entryPrice - price) * position.size / position.entryPrice);
         }
     }
     

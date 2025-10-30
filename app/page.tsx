@@ -6,6 +6,7 @@ import { vaultAddress, fundingRateAddress, tradingEngineAddress, tBTCAddress } f
 import { VaultABI } from "@/lib/abi/Vault"
 import { FundingRateABI } from "@/lib/abi/FundingRate"
 import Header from "@/components/header"
+import { useToast } from "@/hooks/use-toast"
 import ChartPanel from "@/components/chart-panel"
 import TradePanel from "@/components/trade-panel"
 import PositionPanel from "@/components/position-panel"
@@ -18,6 +19,7 @@ import {
   useTradingEngineOpenPosition,
   useTradingEngineClosePosition,
   useTradingEngineLiquidate,
+  useTradingEngineOraclePrice,
   useContractSetup,
   useVaultBalance,
   useVaultDeposit,
@@ -45,9 +47,11 @@ import {
 
 export default function Home() {
   const { address: userAddress } = useAccount()
+  const { toast } = useToast()
   
   // Real blockchain data
   const tradingInfo = useTradingEngineInfo()
+  const oracleTuple = useTradingEngineOraclePrice()
   const positionInfo = useTradingEnginePositionInfo(userAddress)
   const markPrice = tradingInfo.markPrice.data as bigint | undefined
   const isPaused = tradingInfo.paused.data as boolean | undefined
@@ -82,7 +86,8 @@ export default function Home() {
   
   // Fetch real-time BTC price from API (same as chart panel)
   const { data: btcPriceData } = useBTCPrice({ refreshInterval: 30000 })
-  const realTimePrice = btcPriceData?.price || (markPrice ? Number(markPrice) / 1e18 : 42850)
+  const oraclePrice = (oracleTuple?.data as any)?.[0] ? Number((oracleTuple as any).data[0]) / 1e18 : undefined
+  const realTimePrice = btcPriceData?.price || (oraclePrice ?? (markPrice ? Number(markPrice) / 1e18 : 42850))
   
   // Calculate unrealized PnL using real-time BTC price
   const calcUnrealizedPnL = () => {
@@ -118,6 +123,22 @@ export default function Home() {
   // Get current price (use real-time API price, fallback to mark price, then default)
   const currentPrice = realTimePrice
   const currentPnL = calcUnrealizedPnL()
+  const handleLiquidate = async (user: `0x${string}`) => {
+    try {
+      const res = await liquidate(user)
+      if (res?.reward && userAddress && res?.liquidator?.toLowerCase() === userAddress.toLowerCase()) {
+        toast({
+          title: 'Liquidation executed',
+          description: `Reward: ${Number(res.reward) / 1e18} tBTC`,
+        })
+      }
+      if (refetchPosition) await refetchPosition()
+      await refetchVaultBalance()
+    } catch (e: any) {
+      toast({ title: 'Liquidation failed', description: e?.message || 'Transaction error', variant: 'destructive' })
+      throw e
+    }
+  }
   
   // Calculate price change for header (using real-time price)
   const basePrice = 42000 // Reference price for change calculation
@@ -269,6 +290,7 @@ export default function Home() {
             pnlTbtc={currentPnL.tbtc}
             pnlUsd={currentPnL.usd}
             price={currentPrice}
+            oraclePrice={oraclePrice}
             liquidationPrice={liquidationPrice as bigint}
             isLiquidatable={isLiquidatable as boolean}
             onClosePosition={closePosition}
@@ -285,7 +307,7 @@ export default function Home() {
             }}
             lastFundingUpdate={lastFundingUpdate as bigint}
             fundingInterval={fundingConstants.fundingInterval.data as bigint}
-            onLiquidate={liquidate}
+            onLiquidate={handleLiquidate}
             isLiquidating={isLiquidating}
             liquidateError={liquidateError || undefined}
             userAddress={userAddress}
