@@ -10,6 +10,8 @@ import OwnershipManagement from "./ownership-management"
 import InternalMonitor from "./internal-monitor"
 import SystemHealth from "../system/system-health"
 import InsuranceFundCard from "./insurance-fund"
+import MusdReserveAdmin from "./musd-reserve"
+import RiskAndFeesAdmin from "./risk-and-fees"
 
 interface AdminPanelProps {
   className?: string
@@ -21,7 +23,7 @@ export default function AdminPanel({ className }: AdminPanelProps) {
   const { data: vaultBalance } = useVaultBalance(userAddress)
   const { data: vaultOwner } = useVaultOwner()
   
-  const [activeTab, setActiveTab] = useState<"overview" | "emergency" | "ownership" | "monitor">("overview")
+  const [activeTab, setActiveTab] = useState<"overview" | "emergency" | "ownership" | "monitor" | "musd" | "risk">("overview")
 
   // Access control
   if (isLoading) {
@@ -104,6 +106,8 @@ export default function AdminPanel({ className }: AdminPanelProps) {
               { id: "emergency", label: "Emergency", icon: "🚨" },
               { id: "ownership", label: "Ownership", icon: "👑" },
               { id: "monitor", label: "Monitor", icon: "📈" },
+              { id: "musd", label: "MUSD Reserve", icon: "🏦" },
+              { id: "risk", label: "Risk & Fees", icon: "🛡️" },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -204,6 +208,14 @@ export default function AdminPanel({ className }: AdminPanelProps) {
 
           {activeTab === "monitor" && (
             <InternalMonitor />
+          )}
+
+          {activeTab === "musd" && (
+            <MusdReserveAdmin />
+          )}
+
+          {activeTab === "risk" && (
+            <RiskAndFeesAdmin />
           )}
         </div>
       </main>

@@ -162,7 +162,7 @@ export function useVaultOwner() {
 export function useVaultInfo() {
   const tradingEngine = useVaultTradingEngine()
   const tbtc = useVaultTBTC()
-  const musd = useReadContract({ address: vaultAddress, abi: VaultABI, functionName: 'MUSD' })
+  const musd = useReadContract({ address: vaultAddress, abi: VaultABI, functionName: 'musd' })
 
   return {
     tradingEngine,
@@ -196,7 +196,7 @@ export function useVaultMUSDBalance(userAddress?: `0x${string}`) {
   return useReadContract({
     address: vaultAddress,
     abi: VaultABI,
-    functionName: 'balanceOfMUSD',
+    functionName: 'balanceOfMusd',
     args: userAddress ? [userAddress] : undefined,
     query: { enabled: !!userAddress },
   })
@@ -205,10 +205,28 @@ export function useVaultMUSDBalance(userAddress?: `0x${string}`) {
 export function useVaultSetMUSD() {
   const { writeContract, data: hash, isPending, error } = useWriteContract()
   const setMUSD = (musd: `0x${string}`) => {
-    writeContract({ address: vaultAddress, abi: VaultABI, functionName: 'setMUSD', args: [musd] })
+    writeContract({ address: vaultAddress, abi: VaultABI, functionName: 'setMusd', args: [musd] })
   }
   const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash })
   return { setMUSD, hash, isPending, isConfirming, isConfirmed, error }
+}
+
+export function useVaultDepositMUSD() {
+  const { writeContract, data: hash, isPending, error } = useWriteContract()
+  const depositMusd = (amount: bigint) => {
+    writeContract({ address: vaultAddress, abi: VaultABI, functionName: 'depositMusd', args: [amount] })
+  }
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash })
+  return { depositMusd, hash, isPending, isConfirming, isConfirmed, error }
+}
+
+export function useVaultWithdrawMUSD() {
+  const { writeContract, data: hash, isPending, error } = useWriteContract()
+  const withdrawMusd = (amount: bigint) => {
+    writeContract({ address: vaultAddress, abi: VaultABI, functionName: 'withdrawMusd', args: [amount] })
+  }
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash })
+  return { withdrawMusd, hash, isPending, isConfirming, isConfirmed, error }
 }
 
 export function useTBTCAllowance(owner?: `0x${string}`, spender?: `0x${string}`) {

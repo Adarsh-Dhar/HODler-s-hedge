@@ -115,6 +115,68 @@ export function useVaultRenounceOwnership() {
 }
 
 // ============================================================================
+// NEW: VAULT ADMIN SETTERS (TREASURY / FEES / AUTO-SETTLE)
+// ============================================================================
+
+export function useVaultSetTreasury() {
+  const { writeContract, data: hash, isPending, error } = useWriteContract()
+  const setTreasury = (treasury: `0x${string}`) => {
+    writeContract({ address: vaultAddress, abi: VaultABI, functionName: 'setTreasury', args: [treasury] })
+  }
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash })
+  return { setTreasury, hash, isPending, isConfirming, isConfirmed, error }
+}
+
+export function useVaultSetProtocolFeeBps() {
+  const { writeContract, data: hash, isPending, error } = useWriteContract()
+  const setProtocolFeeBps = (bps: bigint) => {
+    writeContract({ address: vaultAddress, abi: VaultABI, functionName: 'setProtocolFeeBps', args: [bps] })
+  }
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash })
+  return { setProtocolFeeBps, hash, isPending, isConfirming, isConfirmed, error }
+}
+
+export function useVaultSetAutoSettle() {
+  const { writeContract, data: hash, isPending, error } = useWriteContract()
+  const setAutoSettle = (on: boolean) => {
+    writeContract({ address: vaultAddress, abi: VaultABI, functionName: 'setAutoSettle', args: [on] })
+  }
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash })
+  return { setAutoSettle, hash, isPending, isConfirming, isConfirmed, error }
+}
+
+// ============================================================================
+// NEW: VAULT ADMIN SETTERS
+// ============================================================================
+
+export function useVaultSetTreasury() {
+  const { writeContract, data: hash, isPending, error } = useWriteContract()
+  const setTreasury = (addr: `0x${string}`) => {
+    writeContract({ address: vaultAddress, abi: VaultABI, functionName: 'setTreasury', args: [addr] })
+  }
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash })
+  return { setTreasury, hash, isPending, isConfirming, isConfirmed, error }
+}
+
+export function useVaultSetProtocolFeeBps() {
+  const { writeContract, data: hash, isPending, error } = useWriteContract()
+  const setProtocolFeeBps = (bps: bigint) => {
+    writeContract({ address: vaultAddress, abi: VaultABI, functionName: 'setProtocolFeeBps', args: [bps] })
+  }
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash })
+  return { setProtocolFeeBps, hash, isPending, isConfirming, isConfirmed, error }
+}
+
+export function useVaultSetAutoSettle() {
+  const { writeContract, data: hash, isPending, error } = useWriteContract()
+  const setAutoSettle = (on: boolean) => {
+    writeContract({ address: vaultAddress, abi: VaultABI, functionName: 'setAutoSettle', args: [on] })
+  }
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash })
+  return { setAutoSettle, hash, isPending, isConfirming, isConfirmed, error }
+}
+
+// ============================================================================
 // OWNER CHECK HOOKS
 // ============================================================================
 

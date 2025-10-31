@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card"
 import { useReadContract } from "wagmi"
 import { insuranceFundAddress, vaultAddress } from "@/lib/address"
 import { VaultABI } from "@/lib/abi/Vault"
+import { InsuranceFundABI } from "@/lib/abi/InsuranceFund"
 
 export default function InsuranceFundCard() {
   const fundAddress = useMemo(() => insuranceFundAddress as `0x${string}` | "", [])
@@ -13,9 +14,16 @@ export default function InsuranceFundCard() {
   const { data: balanceMusd } = useReadContract({
     address: vaultAddress as `0x${string}`,
     abi: VaultABI,
-    functionName: "balanceOfMUSD",
+    functionName: "balanceOfMusd",
     args: fundAddress ? [fundAddress] : undefined,
     query: { enabled: !!fundAddress },
+  })
+
+  // Read actual token balance on InsuranceFund contract (MUSD ERC20)
+  const { data: tokenBalance } = useReadContract({
+    address: insuranceFundAddress as `0x${string}`,
+    abi: InsuranceFundABI,
+    functionName: "getBalance",
   })
 
   return (
@@ -29,8 +37,12 @@ export default function InsuranceFundCard() {
           <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Accounting Balance (Vault MUSD, 18d)</p>
           <p className="text-foreground font-semibold text-sm">{balanceMusd ? balanceMusd.toString() : "0"}</p>
         </div>
+        <div className="bg-muted rounded p-4">
+          <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Token Balance (InsuranceFund MUSD, 18d)</p>
+          <p className="text-foreground font-semibold text-sm">{tokenBalance ? tokenBalance.toString() : "0"}</p>
+        </div>
       </div>
-      <p className="text-xs text-muted-foreground mt-4">Note: Settlement is accounting-only. MUSD is credited inside the Vault to the Insurance Fund address.</p>
+      <p className="text-xs text-muted-foreground mt-4">Vault credits MUSD internally; when reserve is prefunded, payouts are sent as real ERC20 to Insurance Fund and liquidators.</p>
     </Card>
   )
 }

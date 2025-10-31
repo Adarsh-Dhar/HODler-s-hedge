@@ -4,6 +4,7 @@ import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { useAccount } from "wagmi"
 import { useIsVaultOwner } from "@/hooks"
 import Link from "next/link"
+import Image from "next/image"
 
 interface HeaderProps {
   fundingRate?: bigint
@@ -22,9 +23,14 @@ export default function Header({ fundingRate, nextFundingTime, isFundingDue, pri
         <div className="flex items-center justify-between gap-4">
           {/* Logo */}
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-primary rounded flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-sm">₿</span>
-            </div>
+            <Image
+              src="/hodlers-hedge-logo-1.png"
+              alt="HODLer's Hedge"
+              width={32}
+              height={32}
+              className="rounded"
+              priority
+            />
             <h1 className="text-xl font-bold text-foreground">HODLer's Hedge</h1>
           </div>
 

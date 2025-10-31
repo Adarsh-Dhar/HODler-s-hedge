@@ -536,6 +536,37 @@ export function useTradingEngineConstants() {
 }
 
 // ============================================================================
+// ADMIN SETTERS FOR TRADING ENGINE
+// ============================================================================
+
+export function useTESetProtocolFeeBps() {
+  const { writeContract, data: hash, isPending, error } = useWriteContract()
+  const setProtocolFeeBps = (bps: bigint) => {
+    writeContract({ address: tradingEngineAddress, abi: TradingEngineABI, functionName: 'setProtocolFeeBps', args: [bps] })
+  }
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash })
+  return { setProtocolFeeBps, hash, isPending, isConfirming, isConfirmed, error }
+}
+
+export function useTESetMaxOpenInterestTbtc() {
+  const { writeContract, data: hash, isPending, error } = useWriteContract()
+  const setMaxOpenInterestTbtc = (amount: bigint) => {
+    writeContract({ address: tradingEngineAddress, abi: TradingEngineABI, functionName: 'setMaxOpenInterestTbtc', args: [amount] })
+  }
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash })
+  return { setMaxOpenInterestTbtc, hash, isPending, isConfirming, isConfirmed, error }
+}
+
+export function useTESetMaxOracleMoveBps() {
+  const { writeContract, data: hash, isPending, error } = useWriteContract()
+  const setMaxOracleMoveBps = (bps: bigint) => {
+    writeContract({ address: tradingEngineAddress, abi: TradingEngineABI, functionName: 'setMaxOracleMoveBps', args: [bps] })
+  }
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash })
+  return { setMaxOracleMoveBps, hash, isPending, isConfirming, isConfirmed, error }
+}
+
+// ============================================================================
 // TRADING UTILITY HOOKS
 // ============================================================================
 
@@ -563,6 +594,46 @@ export function useTradingEnginePositionInfo(userAddress?: `0x${string}`) {
     liquidationPrice,
     isLiquidatable,
   }
+}
+
+// ============================================================================
+// NEW: TRADING ENGINE ADMIN SETTERS
+// ============================================================================
+
+export function useEngineSetTreasury() {
+  const { writeContract, data: hash, isPending, error } = useWriteContract()
+  const setTreasury = (addr: `0x${string}`) => {
+    writeContract({ address: tradingEngineAddress, abi: TradingEngineABI, functionName: 'setTreasury', args: [addr] })
+  }
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash })
+  return { setTreasury, hash, isPending, isConfirming, isConfirmed, error }
+}
+
+export function useEngineSetProtocolFeeBps() {
+  const { writeContract, data: hash, isPending, error } = useWriteContract()
+  const setProtocolFeeBps = (bps: bigint) => {
+    writeContract({ address: tradingEngineAddress, abi: TradingEngineABI, functionName: 'setProtocolFeeBps', args: [bps] })
+  }
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash })
+  return { setProtocolFeeBps, hash, isPending, isConfirming, isConfirmed, error }
+}
+
+export function useEngineSetMaxOpenInterestTbtc() {
+  const { writeContract, data: hash, isPending, error } = useWriteContract()
+  const setMaxOpenInterestTbtc = (amountTbtc: bigint) => {
+    writeContract({ address: tradingEngineAddress, abi: TradingEngineABI, functionName: 'setMaxOpenInterestTbtc', args: [amountTbtc] })
+  }
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash })
+  return { setMaxOpenInterestTbtc, hash, isPending, isConfirming, isConfirmed, error }
+}
+
+export function useEngineSetMaxOracleMoveBps() {
+  const { writeContract, data: hash, isPending, error } = useWriteContract()
+  const setMaxOracleMoveBps = (bps: bigint) => {
+    writeContract({ address: tradingEngineAddress, abi: TradingEngineABI, functionName: 'setMaxOracleMoveBps', args: [bps] })
+  }
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash })
+  return { setMaxOracleMoveBps, hash, isPending, isConfirming, isConfirmed, error }
 }
 
 // ============================================================================

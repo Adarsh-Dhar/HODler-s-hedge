@@ -4,10 +4,11 @@ pragma solidity ^0.8.13;
 import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 import {ITBTC} from "./interfaces/ITBTC.sol";
+import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 
 contract Vault is ReentrancyGuard, Ownable {
     ITBTC public immutable TBTC;
-    ITBTC public musd; // treat as ERC20-like via ITBTC interface for simplicity
+    IERC20 public musd; // real MUSD ERC20 token
     
     // User balances (in tBTC, 8 decimals)
     mapping(address => uint256) public balances;
@@ -16,6 +17,11 @@ contract Vault is ReentrancyGuard, Ownable {
     
     // Only TradingEngine can call lock/unlock functions
     address public tradingEngine;
+
+    // Protocol fee and treasury
+    address public treasury;
+    uint256 public protocolFeeBps; // e.g. 10 = 0.1%
+    bool public autoSettleOn; // attempt ERC20 transfers when possible
     
     // Events
     event MarginDeposited(address indexed user, uint256 amount);
@@ -24,6 +30,11 @@ contract Vault is ReentrancyGuard, Ownable {
     event MarginUnlocked(address indexed user, uint256 amount, int256 pnl);
     event TradingEngineUpdated(address indexed oldEngine, address indexed newEngine);
     event MusdUpdated(address indexed oldMusd, address indexed newMusd);
+    event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
+    event ProtocolFeeUpdated(uint256 oldFeeBps, uint256 newFeeBps);
+    event AutoSettleUpdated(bool oldValue, bool newValue);
+    event MusdDeposited(address indexed from, uint256 amount);
+    event MusdWithdrawn(address indexed to, uint256 amount);
     
     constructor(address _tbtc) Ownable(msg.sender) {
         require(_tbtc != address(0), "Vault: Invalid TBTC address");
@@ -48,8 +59,74 @@ contract Vault is ReentrancyGuard, Ownable {
 
     function setMusd(address _musd) external onlyOwner {
         address old = address(musd);
-        musd = ITBTC(_musd);
+        musd = IERC20(_musd);
         emit MusdUpdated(old, _musd);
+    }
+
+    function setTreasury(address _treasury) external onlyOwner {
+        address old = treasury;
+        treasury = _treasury;
+        emit TreasuryUpdated(old, _treasury);
+    }
+
+    function setProtocolFeeBps(uint256 _bps) external onlyOwner {
+        uint256 old = protocolFeeBps;
+        protocolFeeBps = _bps;
+        emit ProtocolFeeUpdated(old, _bps);
+    }
+
+    function setAutoSettle(bool on) external onlyOwner {
+        bool old = autoSettleOn;
+        autoSettleOn = on;
+        emit AutoSettleUpdated(old, on);
+    }
+
+    // Owner or anyone can pre-fund MUSD reserve into Vault using ERC20 approve/transferFrom
+    function depositMusd(uint256 amount) external {
+        require(address(musd) != address(0), "Vault: MUSD not set");
+        require(amount > 0, "Vault: Amount must be positive");
+        require(musd.transferFrom(msg.sender, address(this), amount), "Vault: MUSD transferFrom failed");
+        emit MusdDeposited(msg.sender, amount);
+    }
+
+    // Users redeem internal MUSD credits to real MUSD tokens if reserve is sufficient
+    function withdrawMusd(uint256 amount) external nonReentrant {
+        require(address(musd) != address(0), "Vault: MUSD not set");
+        require(amount > 0, "Vault: Amount must be positive");
+        require(balancesMusd[msg.sender] >= amount, "Vault: Insufficient MUSD credit");
+        uint256 bal = musd.balanceOf(address(this));
+        require(bal >= amount, "Vault: Insufficient MUSD reserve");
+        balancesMusd[msg.sender] -= amount;
+        require(musd.transfer(msg.sender, amount), "Vault: MUSD transfer failed");
+        emit MusdWithdrawn(msg.sender, amount);
+    }
+
+    function withdrawTreasuryMusd(uint256 amount) external nonReentrant onlyOwner {
+        require(treasury != address(0), "Vault: Treasury not set");
+        require(amount > 0, "Vault: Amount must be positive");
+        require(musd.balanceOf(address(this)) >= amount, "Vault: Insufficient MUSD reserve");
+        require(musd.transfer(treasury, amount), "Vault: MUSD transfer failed");
+        emit MusdWithdrawn(treasury, amount);
+    }
+
+    function creditTreasury(uint256 amount) external onlyTradingEngine {
+        _payMusd(treasury, amount);
+    }
+
+    function _payMusd(address to, uint256 amount) internal {
+        if (amount == 0 || to == address(0)) {
+            return;
+        }
+        if (autoSettleOn && address(musd) != address(0)) {
+            uint256 bal = musd.balanceOf(address(this));
+            if (bal >= amount) {
+                // try on-chain transfer
+                require(musd.transfer(to, amount), "Vault: MUSD transfer failed");
+                return;
+            }
+        }
+        // fallback to internal credit
+        balancesMusd[to] += amount;
     }
     
     function deposit(uint256 amount) external nonReentrant {
@@ -198,12 +275,12 @@ contract Vault is ReentrancyGuard, Ownable {
             return;
         }
 
-        // Distribute MUSD credits
+        // Distribute MUSD via token if possible, else internal credit
         if (liquidatorRewardMusd > 0) {
-            balancesMusd[liquidator] += liquidatorRewardMusd;
+            _payMusd(liquidator, liquidatorRewardMusd);
         }
         if (insuranceDepositMusd > 0 && insuranceFund != address(0)) {
-            balancesMusd[insuranceFund] += insuranceDepositMusd;
+            _payMusd(insuranceFund, insuranceDepositMusd);
         }
 
         // NOTE: In liquidation we do not return any tBTC to the user; their locked margin is consumed.

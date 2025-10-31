@@ -69,6 +69,13 @@ contract TradingEngine is ReentrancyGuard, Ownable {
     FundingRate public fundingRate;
     PythOracle public pythOracle;
     InsuranceFund public insuranceFund;
+
+    // Fees and risk controls
+    address public treasury;
+    uint256 public protocolFeeBps; // e.g. 10 = 0.1%
+    uint256 public maxOpenInterestTbtc; // in tBTC units (8 decimals aligned with margin)
+    uint256 public currentOpenInterestTbtc; // tracks total open size
+    uint256 public maxOracleMoveBps; // sanity band vs last markPrice
     
     // Events
     event PositionOpened(
@@ -101,6 +108,22 @@ contract TradingEngine is ReentrancyGuard, Ownable {
     function setInsuranceFund(address _insuranceFund) external onlyOwner {
         require(_insuranceFund != address(0), "TradingEngine: invalid IF");
         insuranceFund = InsuranceFund(_insuranceFund);
+    }
+
+    function setTreasury(address _treasury) external onlyOwner {
+        treasury = _treasury;
+    }
+
+    function setProtocolFeeBps(uint256 _bps) external onlyOwner {
+        protocolFeeBps = _bps;
+    }
+
+    function setMaxOpenInterestTbtc(uint256 _max) external onlyOwner {
+        maxOpenInterestTbtc = _max;
+    }
+
+    function setMaxOracleMoveBps(uint256 _bps) external onlyOwner {
+        maxOracleMoveBps = _bps;
     }
 
     function _getOraclePrice18() internal view returns (uint256) {
@@ -138,6 +161,10 @@ contract TradingEngine is ReentrancyGuard, Ownable {
         (uint256 price18,, , ,) = pythOracle.getBtcUsdPrice();
         require(price18 > 0, "TradingEngine: oracle returned zero");
         uint256 oldPrice = markPrice;
+        if (maxOracleMoveBps > 0 && oldPrice > 0) {
+            uint256 diff = price18 > oldPrice ? (price18 - oldPrice) : (oldPrice - price18);
+            require(diff * 10000 / oldPrice <= maxOracleMoveBps, "TradingEngine: oracle move too large");
+        }
         markPrice = price18;
         emit MarkPriceUpdated(oldPrice, price18);
     }
@@ -154,9 +181,20 @@ contract TradingEngine is ReentrancyGuard, Ownable {
     ) external nonReentrant onlyValidLeverage(leverage) whenNotPaused {
         require(marginAmount > 0, "TradingEngine: Margin must be positive");
         require(!positions[msg.sender].exists, "TradingEngine: Position already exists");
+        // Oracle sanity vs mark
+        if (maxOracleMoveBps > 0 && markPrice > 0) {
+            uint256 oracle = _getOraclePrice18();
+            uint256 diff = oracle > markPrice ? (oracle - markPrice) : (markPrice - oracle);
+            require(diff * 10000 / markPrice <= maxOracleMoveBps, "TradingEngine: oracle/mark divergence");
+        }
         
         // Calculate position size
         uint256 positionSize = marginAmount * leverage;
+
+        // OI cap
+        if (maxOpenInterestTbtc > 0) {
+            require(currentOpenInterestTbtc + positionSize <= maxOpenInterestTbtc, "TradingEngine: OI cap");
+        }
         
         // Calculate trading fee (currently unused but kept for future implementation)
         // uint256 fee = (positionSize * TRADING_FEE) / 100000;
@@ -175,6 +213,7 @@ contract TradingEngine is ReentrancyGuard, Ownable {
             exists: true
         });
         
+        currentOpenInterestTbtc += positionSize;
         emit PositionOpened(msg.sender, isLong, marginAmount, leverage, markPrice, positionSize);
     }
     
@@ -195,6 +234,17 @@ contract TradingEngine is ReentrancyGuard, Ownable {
         uint256 price18 = _getOraclePrice18();
         // forge-lint: disable-next-line(unsafe-typecast)
         int256 pnlMusd = (totalPnlTbtc * int256(price18)) / int256(1e8);
+
+        // Protocol fee on notional at close
+        uint256 notionalMusd = (position.size * price18) / 1e8;
+        uint256 feeMusd = protocolFeeBps > 0 ? (notionalMusd * protocolFeeBps) / 10000 : 0;
+        if (feeMusd > 0 && treasury != address(0)) {
+            // Deduct fee from user's MUSD outcome
+            // forge-lint: disable-next-line(unsafe-typecast)
+            pnlMusd -= int256(feeMusd);
+            // Credit/transfer fee to treasury via Vault
+            Vault(address(vault)).creditTreasury(feeMusd);
+        }
         
         // Unlock tBTC margin and settle MUSD accounting
         IVaultExtended(address(vault)).unlockMarginAndSettleMusd(
@@ -205,6 +255,7 @@ contract TradingEngine is ReentrancyGuard, Ownable {
         );
         
         // Clear position
+        currentOpenInterestTbtc -= position.size;
         delete positions[msg.sender];
         
         emit PositionClosed(msg.sender, totalPnlTbtc, markPrice, fundingPayment);
@@ -213,6 +264,12 @@ contract TradingEngine is ReentrancyGuard, Ownable {
     function liquidate(address user) external nonReentrant {
         Position storage position = positions[user];
         require(position.exists, "TradingEngine: No position to liquidate");
+        // Oracle sanity vs mark
+        if (maxOracleMoveBps > 0 && markPrice > 0) {
+            uint256 oracle = _getOraclePrice18();
+            uint256 diff = oracle > markPrice ? (oracle - markPrice) : (markPrice - oracle);
+            require(diff * 10000 / markPrice <= maxOracleMoveBps, "TradingEngine: oracle/mark divergence");
+        }
         require(isLiquidatable(user), "TradingEngine: Position not liquidatable");
         
         // Calculate PnL
@@ -241,6 +298,17 @@ contract TradingEngine is ReentrancyGuard, Ownable {
         uint256 marginMusd = (position.margin * price18) / 1e8;
         uint256 remainingMusd = (remainingTbtc * price18) / 1e8;
 
+        // Protocol fee on notional during liquidation (taken from remaining, capped)
+        uint256 notionalMusd = (position.size * price18) / 1e8;
+        uint256 feeMusd = protocolFeeBps > 0 ? (notionalMusd * protocolFeeBps) / 10000 : 0;
+        if (feeMusd > 0 && treasury != address(0)) {
+            uint256 feeTaken = feeMusd > remainingMusd ? remainingMusd : feeMusd;
+            if (feeTaken > 0) {
+                remainingMusd -= feeTaken;
+                Vault(address(vault)).creditTreasury(feeTaken);
+            }
+        }
+
         // Max reward as % of collateral value in MUSD
         uint256 maxRewardMusd = (marginMusd * LIQUIDATION_BONUS) / 10000;
         uint256 liquidatorRewardMusd = remainingMusd < maxRewardMusd ? remainingMusd : maxRewardMusd;
@@ -263,6 +331,7 @@ contract TradingEngine is ReentrancyGuard, Ownable {
         );
         
         // Clear position
+        currentOpenInterestTbtc -= position.size;
         delete positions[user];
         
         emit Liquidated(user, msg.sender, liquidatorRewardMusd);

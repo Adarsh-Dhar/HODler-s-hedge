@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast"
 import ChartPanel from "@/components/chart-panel"
 import TradePanel from "@/components/trade-panel"
 import PositionPanel from "@/components/position-panel"
+import MusdWalletCard from "@/components/user/musd-wallet"
 
 // Import contract hooks
 import {
@@ -312,6 +313,11 @@ export default function Home() {
             liquidateError={liquidateError || undefined}
             userAddress={userAddress}
           />
+        </div>
+
+        {/* MUSD Wallet */}
+        <div className="mt-6">
+          <MusdWalletCard />
         </div>
       </main>
     </div>
