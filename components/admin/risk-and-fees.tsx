@@ -7,7 +7,7 @@ import { useAccount, useReadContract } from "wagmi"
 import { vaultAddress, tradingEngineAddress } from "@/lib/address"
 import { VaultABI } from "@/lib/abi/Vault"
 import { TradingEngineABI } from "@/lib/abi/TradingEngine"
-import { useVaultSetAutoSettle, useVaultSetProtocolFeeBps, useVaultSetTreasury } from "@/hooks"
+import { useVaultSetAutoSettle, useVaultSetProtocolFeeBps, useVaultSetTreasury, useTradingEngineRefreshMarkPrice, useTradingEngineOraclePrice } from "@/hooks"
 import { useEngineSetMaxOpenInterestTbtc, useEngineSetMaxOracleMoveBps, useEngineSetProtocolFeeBps, useEngineSetTreasury } from "@/hooks"
 
 export default function RiskAndFeesAdmin() {
@@ -19,6 +19,8 @@ export default function RiskAndFeesAdmin() {
   const { data: autoSettle } = useReadContract({ address: vaultAddress, abi: VaultABI, functionName: 'autoSettleOn' })
 
   const { data: markPrice } = useReadContract({ address: tradingEngineAddress, abi: TradingEngineABI, functionName: 'getMarkPrice' })
+  const oraclePriceQuery = useTradingEngineOraclePrice()
+  const { refreshMarkPrice, isPending: isRefreshing, isConfirming: isRefreshConfirming, isConfirmed: isRefreshConfirmed, error: refreshError } = useTradingEngineRefreshMarkPrice()
 
   // Forms
   const [treasury, setTreasury] = useState<`0x${string}` | "">("")
@@ -119,6 +121,63 @@ export default function RiskAndFeesAdmin() {
             <Button onClick={() => auto !== null && vaultSetAuto.setAutoSettle(auto)}>Set</Button>
           </div>
           <p className="text-muted-foreground text-xs mt-2">Auto-settle attempts ERC20 transfers; falls back to internal credit otherwise.</p>
+        </div>
+
+        {/* Price Oracle Refresh */}
+        <div className="border border-border rounded p-4 md:col-span-2">
+          <p className="text-sm font-semibold mb-2">Price Oracle Refresh</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div className="bg-muted rounded p-3">
+              <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Current Mark Price</p>
+              <p className="text-foreground font-semibold">
+                {markPrice ? `$${(Number(markPrice) / 1e18).toLocaleString('en-US', { maximumFractionDigits: 2 })}` : 'Loading...'}
+              </p>
+            </div>
+            <div className="bg-muted rounded p-3">
+              <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Oracle Price (Pyth)</p>
+              <p className="text-foreground font-semibold">
+                {(() => {
+                  const oracleData = oraclePriceQuery?.data as [bigint, bigint] | undefined
+                  return oracleData && oracleData[0]
+                    ? `$${(Number(oracleData[0]) / 1e18).toLocaleString('en-US', { maximumFractionDigits: 2 })}`
+                    : 'Not available'
+                })()}
+              </p>
+              {(() => {
+                const oracleData = oraclePriceQuery?.data as [bigint, bigint] | undefined
+                return oracleData && oracleData[1] ? (
+                  <p className="text-muted-foreground text-xs mt-1">
+                    Updated: {new Date(Number(oracleData[1]) * 1000).toLocaleTimeString()}
+                  </p>
+                ) : null
+              })()}
+            </div>
+          </div>
+          
+          <div className="flex gap-2 items-center">
+            <Button
+              onClick={() => refreshMarkPrice()}
+              disabled={isRefreshing || isRefreshConfirming}
+              className="bg-primary hover:bg-primary/90 text-background"
+            >
+              {isRefreshing || isRefreshConfirming ? 'Refreshing...' : 'Refresh from Hermes'}
+            </Button>
+            {isRefreshConfirmed && (
+              <span className="text-success text-sm">✓ Refresh successful</span>
+            )}
+            {refreshError && (
+              <span className="text-destructive text-sm">{refreshError.message}</span>
+            )}
+          </div>
+          
+          <div className="mt-3 space-y-1">
+            <p className="text-muted-foreground text-xs">
+              Updates on-chain mark price from Pyth oracle using Hermes price feed. Requires small ETH fee (~0.001 ETH, excess refunded).
+            </p>
+            <p className="text-muted-foreground text-xs">
+              This ensures prices are cryptographically verified and match other DeFi protocols using Pyth.
+            </p>
+          </div>
         </div>
       </div>
     </Card>

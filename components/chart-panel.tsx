@@ -1,7 +1,8 @@
 "use client"
 
 import { Card } from "@/components/ui/card"
-import { useBTCPrice, useIsVaultOwner } from "@/hooks"
+import { Button } from "@/components/ui/button"
+import { useBTCPrice, useIsVaultOwner, useTradingEngineRefreshMarkPrice } from "@/hooks"
 import { useAccount } from "wagmi"
 import { useEffect, useState } from "react"
 
@@ -39,6 +40,7 @@ export default function ChartPanel({
   
   const { address } = useAccount()
   const { isOwner } = useIsVaultOwner(address)
+  const { refreshMarkPrice, isPending: isRefreshing, isConfirming: isRefreshConfirming, isConfirmed: isRefreshConfirmed, error: refreshError } = useTradingEngineRefreshMarkPrice()
   
   // Use real-time price if available, otherwise fallback to prop
   const currentPrice = btcData?.price || fallbackPrice || 42000
@@ -97,6 +99,31 @@ export default function ChartPanel({
                 Updated {lastUpdated.toLocaleTimeString()}
               </p>
             )}
+            {/* Price Refresh Indicator */}
+            <div className="flex items-center gap-2 mt-3">
+              <Button
+                onClick={() => refreshMarkPrice()}
+                disabled={isRefreshing || isRefreshConfirming}
+                size="sm"
+                variant="outline"
+                className="text-xs h-7"
+              >
+                {isRefreshing || isRefreshConfirming ? 'Refreshing...' : 'Refresh Price'}
+              </Button>
+              {isRefreshConfirmed && (
+                <span className="text-success text-xs">✓ Updated</span>
+              )}
+              {refreshError && (
+                <span className="text-destructive text-xs" title={refreshError.message}>
+                  ⚠ Refresh failed
+                </span>
+              )}
+              {markPrice && (
+                <span className="text-muted-foreground text-xs">
+                  On-chain: ${(Number(markPrice) / 1e18).toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                </span>
+              )}
+            </div>
           </div>
           <div className="text-right">
             <p className="text-muted-foreground text-xs uppercase tracking-wide">Perpetual</p>
