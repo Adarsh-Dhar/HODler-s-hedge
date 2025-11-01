@@ -95,11 +95,24 @@ node dist/index.js
 |----------|-------------|---------|
 | `LIQUIDATOR_PRIVATE_KEY` | Private key of liquidator wallet | Required |
 | `RPC_URL` | RPC endpoint URL | `https://rpc.test.mezo.org` |
-| `TRADING_ENGINE_ADDRESS` | TradingEngine contract address | From `lib/address.ts` |
+| `TRADING_ENGINE_ADDRESS` | TradingEngine contract address | Imported from `lib/address.ts` |
 | `MONITOR_INTERVAL_MS` | How often to check positions (ms) | `15000` (15s) |
 | `CHAIN_ID` | Network chain ID | `31611` |
 | `MAX_GAS_PRICE_GWEI` | Max gas price limit (0 = no limit) | `0` |
 | `BACKFILL_BLOCK_RANGE` | Blocks to look back for events | `6000` (~7 days) |
+
+### Shared Configuration
+
+The bot automatically imports contract addresses and ABIs from the shared `lib/` directory:
+- **Contract Address**: Imported from `lib/address.ts` (same source as frontend)
+- **Contract ABI**: Imported from `lib/abi/TradingEngine.ts` (same source as frontend)
+
+This ensures:
+- ✅ The bot always uses the same contract address as the frontend
+- ✅ The bot always uses the same ABI as the frontend
+- ✅ No manual synchronization needed when contracts are updated
+
+To override the default address, set the `TRADING_ENGINE_ADDRESS` environment variable.
 
 ## Monitoring
 

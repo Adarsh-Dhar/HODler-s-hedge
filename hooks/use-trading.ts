@@ -1,5 +1,5 @@
 import { useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi'
-import { parseUnits, parseEther } from 'viem'
+import { parseUnits, parseEther, decodeErrorResult, formatUnits } from 'viem'
 import { useAccount } from 'wagmi'
 import { tradingEngineAddress, vaultAddress, fundingRateAddress } from '@/lib/address'
 import { TradingEngineABI } from '@/lib/abi/TradingEngine'
@@ -131,6 +131,14 @@ export function useTradingEnginePaused() {
   })
 }
 
+export function useTradingEnginePythOracle() {
+  return useReadContract({
+    address: tradingEngineAddress,
+    abi: TradingEngineABI,
+    functionName: 'pythOracle',
+  })
+}
+
 // ============================================================================
 // ORACLE PRICE REFRESH
 // ============================================================================
@@ -141,6 +149,68 @@ export function useTradingEngineRefreshMarkPrice() {
   
   const refreshMarkPrice = async () => {
     try {
+      // Pre-flight diagnostic checks
+      console.log('=== REFRESH MARK PRICE PRE-FLIGHT CHECKS ===')
+      
+      if (!publicClient) {
+        throw new Error('Public client not available. Cannot check contract state.')
+      }
+      
+      // Check if contract is paused
+      let isPaused: boolean = false
+      try {
+        isPaused = await publicClient.readContract({
+          address: tradingEngineAddress,
+          abi: TradingEngineABI,
+          functionName: 'paused',
+        }) as boolean
+        console.log('Contract paused status:', isPaused)
+        if (isPaused) {
+          throw new Error('Contract is paused. Trading is temporarily disabled.')
+        }
+      } catch (pauseErr: any) {
+        if (pauseErr?.message?.includes('paused')) {
+          throw pauseErr
+        }
+        console.warn('Could not check paused status:', pauseErr?.message)
+      }
+      
+      // Check if Pyth oracle is configured
+      let pythOracleAddress: `0x${string}` | undefined
+      try {
+        pythOracleAddress = await publicClient.readContract({
+          address: tradingEngineAddress,
+          abi: TradingEngineABI,
+          functionName: 'pythOracle',
+        }) as `0x${string}`
+        console.log('Pyth oracle address:', pythOracleAddress)
+        
+        if (!pythOracleAddress || pythOracleAddress === '0x0000000000000000000000000000000000000000') {
+          throw new Error('Pyth oracle not configured. Oracle address is zero. Please contact the contract owner.')
+        }
+      } catch (oracleErr: any) {
+        if (oracleErr?.message?.includes('oracle not configured')) {
+          throw oracleErr
+        }
+        console.warn('Could not check oracle address:', oracleErr?.message)
+        throw new Error('Failed to verify oracle configuration. Please contact support.')
+      }
+      
+      // Check current mark price (for diagnostics)
+      let markPrice: bigint | undefined
+      try {
+        markPrice = await publicClient.readContract({
+          address: tradingEngineAddress,
+          abi: TradingEngineABI,
+          functionName: 'getMarkPrice',
+        }) as bigint
+        console.log('Current mark price:', markPrice?.toString(), `(${markPrice ? Number(markPrice) / 1e18 : 'N/A'} USD)`)
+      } catch (markPriceErr: any) {
+        console.warn('Could not read mark price:', markPriceErr?.message)
+      }
+      
+      console.log('Pre-flight checks passed. Proceeding with price refresh...')
+      
       // 1. Fetch Hermes update bytes
       console.log('Fetching Pyth Hermes update bytes...')
       const updateBytes = await fetchPythLatestUpdateHex()
@@ -154,29 +224,102 @@ export function useTradingEngineRefreshMarkPrice() {
       
       console.log('Calling refreshMarkPrice with Hermes bytes...', {
         updateBytesCount: updateBytes.length,
-        feeEstimate: feeEstimate.toString()
+        feeEstimate: feeEstimate.toString(),
+        pythOracleAddress,
+        currentMarkPrice: markPrice ? Number(markPrice) / 1e18 : 'N/A'
       })
       
       // 3. Call refreshMarkPrice with bytes and ETH for fee
-      const txHash = await writeContractAsync({
-        address: tradingEngineAddress,
-        abi: TradingEngineABI,
-        functionName: 'refreshMarkPrice',
-        args: [updateBytes],
-        value: feeEstimate, // Pyth will use what it needs and refund excess
-      })
+      try {
+        const txHash = await writeContractAsync({
+          address: tradingEngineAddress,
+          abi: TradingEngineABI,
+          functionName: 'refreshMarkPrice',
+          args: [updateBytes],
+          value: feeEstimate, // Pyth will use what it needs and refund excess
+        })
+        
+        // 4. Wait for confirmation
+        if (publicClient) {
+          await publicClient.waitForTransactionReceipt({ hash: txHash })
+        }
+        
+        console.log('Price refresh successful')
+      } catch (writeError: any) {
+        console.error('=== REFRESH MARK PRICE WRITE ERROR ===')
+        console.error('Write error:', writeError)
+        
+        // Try to decode error from multiple possible locations
+        let decodedError: any = null
+        let errorData: `0x${string}` | undefined
+        
+        // Check various error data locations - viem error structure can vary
+        if (writeError?.cause?.data) {
+          errorData = writeError.cause.data
+        } else if (writeError?.data) {
+          errorData = writeError.data
+        } else if (writeError?.cause?.reason?.data) {
+          errorData = writeError.cause.reason.data
+        } else if (writeError?.cause?.data?.data) {
+          errorData = writeError.cause.data.data
+        }
+        
+        if (errorData && errorData.startsWith('0x')) {
+          try {
+            decodedError = decodeErrorResult({
+              abi: TradingEngineABI,
+              data: errorData,
+            })
+            console.log('Decoded error from refreshMarkPrice:', decodedError)
+            
+            // Re-throw with decoded information
+            const errorName = decodedError.errorName || 'UnknownError'
+            const argsStr = decodedError.args ? ` Args: ${JSON.stringify(decodedError.args)}` : ''
+            throw new Error(`Oracle update failed: ${errorName}${argsStr}`)
+          } catch (decodeErr) {
+            console.log('Could not decode refreshMarkPrice error:', decodeErr)
+            // Continue to throw original error
+          }
+        }
+        
+        // If we couldn't decode, throw the original error to be handled below
+        throw writeError
+      }
+    } catch (err: any) {
+      console.error('=== REFRESH MARK PRICE ERROR ===')
+      console.error('Error type:', typeof err)
+      console.error('Error message:', err?.message)
+      console.error('Error cause:', err?.cause)
+      console.error('Error data:', err?.data)
+      console.error('Error code:', err?.code)
+      console.error('Error name:', err?.name)
+      console.error('Error shortMessage:', err?.shortMessage)
       
-      // 4. Wait for confirmation
-      if (publicClient) {
-        await publicClient.waitForTransactionReceipt({ hash: txHash })
+      // Log transaction details if available (from gas estimation error)
+      if (err?.transaction) {
+        console.error('Transaction details:', {
+          to: err.transaction.to,
+          from: err.transaction.from,
+          dataLength: err.transaction.data?.length || 0,
+        })
       }
       
-      console.log('Price refresh successful')
-    } catch (err: any) {
-      console.error('Error refreshing mark price:', err)
+      console.error('Full error:', JSON.stringify(err, Object.getOwnPropertyNames(err), 2))
       
       // Provide user-friendly error messages
-      if (err?.message?.includes('Hermes') || err?.message?.includes('fetch')) {
+      if (err?.message?.includes('Oracle update failed:')) {
+        // Already formatted error from decoded contract error
+        throw err
+      } else if (err?.message?.includes('Public client not available')) {
+        // Pre-flight check failure
+        throw err
+      } else if (err?.message?.includes('Contract is paused')) {
+        // Pre-flight check failure
+        throw err
+      } else if (err?.message?.includes('oracle not configured') || err?.message?.includes('Oracle address is zero') || err?.message?.includes('Failed to verify oracle')) {
+        // Pre-flight check failure
+        throw err
+      } else if (err?.message?.includes('Hermes') || err?.message?.includes('fetch')) {
         throw new Error('Failed to fetch price update from Hermes. Please check your network connection and try again.')
       } else if (err?.message?.includes('insufficient fee') || err?.message?.includes('insufficient funds')) {
         throw new Error('Insufficient ETH for Pyth update fee. Please ensure you have enough ETH for the transaction.')
@@ -184,10 +327,25 @@ export function useTradingEngineRefreshMarkPrice() {
         throw new Error('Oracle not configured. Please contact the contract owner.')
       } else if (err?.message?.includes('oracle move too large')) {
         throw new Error('Price update rejected: price change too large. This protects against oracle manipulation.')
-      } else if (err?.message?.includes('paused')) {
+      } else if (err?.message?.includes('paused') || err?.message?.includes('Paused')) {
         throw new Error('Contract is paused. Trading is temporarily disabled.')
-      } else if (err?.message?.includes('user rejected')) {
+      } else if (err?.message?.includes('user rejected') || err?.message?.includes('User rejected')) {
         throw new Error('Transaction rejected by user')
+      } else if (err?.message?.includes('CALL_EXCEPTION') || err?.message?.includes('missing revert data') || err?.code === 'CALL_EXCEPTION') {
+        // Enhanced error message for missing revert data during oracle update
+        // Note: Pre-flight checks should have caught most common issues, so this suggests:
+        // - Price change too large (oracle move protection)
+        // - Pyth oracle contract itself is reverting
+        // - Invalid/expired update bytes
+        let diagnosticMessage = 'Oracle price update failed during gas estimation (missing revert data).\n\n'
+        diagnosticMessage += 'Pre-flight checks passed, but transaction still failed. Possible causes:\n'
+        diagnosticMessage += '• Price change too large (oracle move protection)\n'
+        diagnosticMessage += '• Invalid or expired Pyth update bytes\n'
+        diagnosticMessage += '• Pyth oracle contract error\n'
+        diagnosticMessage += '• Insufficient ETH for Pyth update fee\n\n'
+        diagnosticMessage += 'Check the console logs for detailed diagnostic information.'
+        
+        throw new Error(diagnosticMessage)
       } else {
         throw new Error(err?.message || 'Failed to refresh price from oracle. Please try again.')
       }
@@ -213,17 +371,62 @@ export function useTradingEngineRefreshMarkPrice() {
 // ============================================================================
 
 export function useTradingEngineOpenPosition() {
+  const { address: userAddress } = useAccount()
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract()
+  const publicClient = usePublicClient()
   const { refreshMarkPrice } = useTradingEngineRefreshMarkPrice()
+  
+  // Pre-flight checks
+  const { data: isPaused } = useReadContract({
+    address: tradingEngineAddress,
+    abi: TradingEngineABI,
+    functionName: 'paused',
+  })
+  
+  const { data: position } = useReadContract({
+    address: tradingEngineAddress,
+    abi: TradingEngineABI,
+    functionName: 'getPosition',
+    args: userAddress ? [userAddress] : undefined,
+    query: {
+      enabled: !!userAddress,
+    },
+  })
   
   const openPosition = async (isLong: boolean, marginAmount: bigint, leverage: bigint) => {
     try {
+      console.log('=== OPEN POSITION DEBUG START ===')
       console.log('Opening position with params:', {
         isLong,
         marginAmount: marginAmount.toString(),
         leverage: leverage.toString(),
-        tradingEngineAddress
+        marginAmountFormatted: formatUnits(marginAmount, 8),
+        tradingEngineAddress,
+        userAddress
       })
+      
+      // Pre-flight validations
+      if (!userAddress) {
+        throw new Error('No user address found. Please connect your wallet.')
+      }
+      
+      if (marginAmount <= BigInt(0)) {
+        throw new Error('Margin amount must be greater than 0')
+      }
+      
+      if (leverage < BigInt(1) || leverage > BigInt(20)) {
+        throw new Error('Invalid leverage. Must be between 1 and 20.')
+      }
+      
+      // Check if contract is paused
+      if (isPaused) {
+        throw new Error('Contract is paused. Trading is temporarily disabled.')
+      }
+      
+      // Check if user already has a position
+      if ((position as any)?.exists) {
+        throw new Error('You already have an open position. Close it before opening a new one.')
+      }
       
       // REQUIRED: Refresh mark price from Pyth oracle before opening position
       // This ensures the on-chain price is accurate and verified cryptographically
@@ -237,38 +440,170 @@ export function useTradingEngineOpenPosition() {
         throw new Error(`Cannot open position: Price refresh failed. ${refreshError?.message || 'Oracle update failed. Please try again.'}`)
       }
       
+      // Simulate the contract call first to catch errors early
+      console.log('Simulating contract call...')
+      try {
+        if (publicClient) {
+          await publicClient.simulateContract({
+            address: tradingEngineAddress as `0x${string}`,
+            abi: TradingEngineABI,
+            functionName: 'openPosition',
+            args: [isLong, marginAmount, leverage],
+            account: userAddress,
+          })
+          console.log('Simulation successful')
+        }
+      } catch (simulateError: any) {
+        console.error('Contract simulation failed:', simulateError)
+        
+        // Try to decode the error
+        let errorMessage = simulateError?.message || 'Transaction simulation failed'
+        
+        if (simulateError?.cause) {
+          try {
+            // Try to decode revert reason from error data
+            if (simulateError.cause.data) {
+              const decoded = decodeErrorResult({
+                abi: TradingEngineABI,
+                data: simulateError.cause.data as `0x${string}`,
+              })
+              errorMessage = decoded.errorName || errorMessage
+              console.log('Decoded error:', decoded)
+            }
+          } catch (decodeErr) {
+            console.log('Could not decode error:', decodeErr)
+          }
+        }
+        
+        // Map common error patterns
+        if (errorMessage.includes('Position already exists') || errorMessage.includes('position already exists')) {
+          throw new Error('You already have an open position. Close it before opening a new one.')
+        } else if (errorMessage.includes('Margin must be positive') || errorMessage.includes('margin must be positive')) {
+          throw new Error('Margin amount must be greater than 0')
+        } else if (errorMessage.includes('Invalid leverage') || errorMessage.includes('invalid leverage')) {
+          throw new Error('Invalid leverage amount. Please use a leverage between 1 and 20.')
+        } else if (errorMessage.includes('Contract is paused') || errorMessage.includes('paused')) {
+          throw new Error('Contract is paused. Trading is temporarily disabled.')
+        } else if (errorMessage.includes('oracle/mark divergence') || errorMessage.includes('oracle move too large')) {
+          throw new Error('Oracle price divergence detected. Please try again in a moment.')
+        } else if (errorMessage.includes('OI cap') || errorMessage.includes('open interest')) {
+          throw new Error('Maximum open interest reached. Please try again later.')
+        } else if (errorMessage.includes('insufficient balance') || errorMessage.includes('Insufficient balance')) {
+          throw new Error('Insufficient vault balance. Please deposit more BTC to the vault first.')
+        } else if (errorMessage.includes('oracle not set') || errorMessage.includes('oracle returned zero')) {
+          throw new Error('Oracle not configured properly. Please contact support.')
+        } else if (errorMessage.includes('Vault: Only TradingEngine') || errorMessage.includes('Unauthorized')) {
+          throw new Error('Contract configuration error. Vault reference may be incorrect.')
+        } else {
+          throw new Error(`Transaction will fail: ${errorMessage}`)
+        }
+      }
+      
       // Open the position - entryPrice will use the freshly updated on-chain markPrice
-      console.log('Opening position with updated mark price...')
-      await writeContractAsync({
-        address: tradingEngineAddress,
-        abi: TradingEngineABI,
-        functionName: 'openPosition',
-        args: [isLong, marginAmount, leverage],
-      })
+      console.log('Executing openPosition transaction...')
+      try {
+        await writeContractAsync({
+          address: tradingEngineAddress as `0x${string}`,
+          abi: TradingEngineABI,
+          functionName: 'openPosition',
+          args: [isLong, marginAmount, leverage],
+        })
+        
+        console.log('Transaction submitted')
+        console.log('=== OPEN POSITION DEBUG END ===')
+        // Note: hash is tracked via useWriteContract and returned from the hook
+      } catch (writeError: any) {
+        console.error('=== WRITE CONTRACT ERROR ===')
+        console.error('Write error:', writeError)
+        
+        // Try to decode error from multiple possible locations
+        let decodedError: any = null
+        let errorData: `0x${string}` | undefined
+        
+        // Check various error data locations - viem error structure can vary
+        if (writeError?.cause?.data) {
+          errorData = writeError.cause.data
+        } else if (writeError?.data) {
+          errorData = writeError.data
+        } else if (writeError?.cause?.reason?.data) {
+          errorData = writeError.cause.reason.data
+        } else if (writeError?.cause?.data?.data) {
+          errorData = writeError.cause.data.data
+        }
+        
+        if (errorData && errorData.startsWith('0x')) {
+          try {
+            decodedError = decodeErrorResult({
+              abi: TradingEngineABI,
+              data: errorData,
+            })
+            console.log('Decoded error from writeContract:', decodedError)
+            
+            // Re-throw with decoded information
+            const errorName = decodedError.errorName || 'UnknownError'
+            const argsStr = decodedError.args ? ` Args: ${JSON.stringify(decodedError.args)}` : ''
+            throw new Error(`Contract error: ${errorName}${argsStr}`)
+          } catch (decodeErr) {
+            console.log('Could not decode writeContract error:', decodeErr)
+            // Continue to throw original error
+          }
+        }
+        
+        // If we couldn't decode, throw the original error to be handled below
+        throw writeError
+      }
     } catch (err: any) {
-      console.error('Error opening position:', err)
+      console.error('=== OPEN POSITION ERROR ===')
+      console.error('Error type:', typeof err)
+      console.error('Error message:', err?.message)
+      console.error('Error cause:', err?.cause)
+      console.error('Error data:', err?.data)
+      console.error('Error code:', err?.code)
+      console.error('Error name:', err?.name)
+      console.error('Error shortMessage:', err?.shortMessage)
+      
+      // Log transaction details if available (from gas estimation error)
+      if (err?.transaction) {
+        console.error('Transaction details:', {
+          to: err.transaction.to,
+          from: err.transaction.from,
+          dataLength: err.transaction.data?.length || 0,
+        })
+      }
+      
+      console.error('Full error:', JSON.stringify(err, Object.getOwnPropertyNames(err), 2))
       
       // Provide more specific error messages
       if (err?.message?.includes('Price refresh failed') || err?.message?.includes('Cannot open position')) {
         // Already formatted error from refresh failure
         throw err
-      } else if (err?.message?.includes('insufficient funds')) {
-        throw new Error('Insufficient funds for transaction')
-      } else if (err?.message?.includes('user rejected')) {
+      } else if (err?.message?.includes('Contract error:')) {
+        // Already formatted error from decoded contract error
+        throw err
+      } else if (err?.message?.includes('insufficient funds') || err?.message?.includes('gas')) {
+        throw new Error('Insufficient funds for transaction. Please ensure you have enough ETH for gas.')
+      } else if (err?.message?.includes('user rejected') || err?.message?.includes('User rejected')) {
         throw new Error('Transaction rejected by user')
-      } else if (err?.message?.includes('network')) {
+      } else if (err?.message?.includes('network') || err?.message?.includes('Network')) {
         throw new Error('Network connection error. Please check your connection and try again.')
-      } else if (err?.message?.includes('position already exists')) {
-        throw new Error('You already have an open position. Close it before opening a new one.')
-      } else if (err?.message?.includes('margin must be positive')) {
-        throw new Error('Margin amount must be greater than 0')
-      } else if (err?.message?.includes('Insufficient balance') || err?.message?.includes('insufficient balance')) {
-        throw new Error('Insufficient vault balance. Please deposit more BTC to the vault first.')
-      } else if (err?.message?.includes('Invalid leverage')) {
-        throw new Error('Invalid leverage amount. Please use a leverage between 1 and 20.')
-      } else if (err?.message?.includes('CALL_EXCEPTION') || err?.message?.includes('missing revert data')) {
-        throw new Error('Transaction failed. Please check your vault balance and try again.')
+      } else if (err?.message?.includes('Transaction will fail')) {
+        // Already formatted from simulation
+        throw err
+      } else if (err?.message?.includes('CALL_EXCEPTION') || err?.message?.includes('missing revert data') || err?.code === 'CALL_EXCEPTION') {
+        // Enhanced error message for missing revert data
+        let diagnosticMessage = 'Transaction failed during gas estimation (missing revert data).\n\n'
+        diagnosticMessage += 'Common causes:\n'
+        diagnosticMessage += '• Insufficient vault balance\n'
+        diagnosticMessage += '• Existing position not closed\n'
+        diagnosticMessage += '• Contract is paused\n'
+        diagnosticMessage += '• Oracle not configured or price too stale\n'
+        diagnosticMessage += '• Vault/TradingEngine reference mismatch\n'
+        diagnosticMessage += '• Open interest cap reached\n\n'
+        diagnosticMessage += 'Please check your vault balance and contract state.'
+        
+        throw new Error(diagnosticMessage)
       } else {
+        // Pass through the error message if it's already user-friendly
         throw new Error(err?.message || 'Failed to open position. Please try again.')
       }
     }

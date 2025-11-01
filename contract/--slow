@@ -1,0 +1,53 @@
+No files changed, compilation skipped
+Script ran successfully.
+
+== Logs ==
+  Deploying contracts with account: 0xb05b9DCBDCBa563cB2525ba35292C97F982de08c
+  Account balance: 39999968192959922
+  Current nonce: 298
+  Deploying MockTBTC...
+  MockTBTC deployed at: 0xd9f32D305ac50ccE926623B60fb786bcE57e796D
+  Deploying Vault...
+  Vault deployed at: 0x7d327695aeF0148d3807581a3fAac5310692115B
+  Deploying FundingRate...
+  FundingRate deployed at: 0x4E3a3346ea3bd18506c89E76FE0906343093E753
+  Deploying TradingEngine...
+  TradingEngine deployed at: 0x7c77A78813F8785Aaaf082fDc852A968FF4FFFDe
+  Deploying InsuranceFund...
+  InsuranceFund deployed at: 0x75314cE1587DE958DaeD679e240fb993558dAfb8
+  Setting up contract references...
+  
+=== Deployment Summary ===
+  Vault: 0x7d327695aeF0148d3807581a3fAac5310692115B
+  TradingEngine: 0x7c77A78813F8785Aaaf082fDc852A968FF4FFFDe
+  FundingRate: 0x4E3a3346ea3bd18506c89E76FE0906343093E753
+  InsuranceFund: 0x75314cE1587DE958DaeD679e240fb993558dAfb8
+  MockTBTC: 0xd9f32D305ac50ccE926623B60fb786bcE57e796D
+  Initial Mark Price: $42,000
+  
+=== Verification ===
+  Vault owner: 0xb05b9DCBDCBa563cB2525ba35292C97F982de08c
+  TradingEngine owner: 0xb05b9DCBDCBa563cB2525ba35292C97F982de08c
+  FundingRate owner: 0xb05b9DCBDCBa563cB2525ba35292C97F982de08c
+  TradingEngine vault: 0x7d327695aeF0148d3807581a3fAac5310692115B
+  TradingEngine fundingRate: 0x4E3a3346ea3bd18506c89E76FE0906343093E753
+  TradingEngine markPrice: 42000000000000000000000
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 31611
+
+Estimated gas price: 0.000000146 gwei
+
+Estimated total gas used for script: 7323078
+
+Estimated amount required: 0.000000001069169388 ETH
+
+==========================
+
+Transactions saved to: /Users/adarsh/Documents/hodlers-hedge/contract/broadcast/Deploy.s.sol/31611/run-latest.json
+
+Sensitive values saved to: /Users/adarsh/Documents/hodlers-hedge/contract/cache/Deploy.s.sol/31611/run-latest.json
+

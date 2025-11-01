@@ -3,10 +3,33 @@
  */
 
 import dotenv from 'dotenv'
+import { readFileSync } from 'fs'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
 import type { BotConfig } from './types.js'
 
-// Default TradingEngine address from lib/address.ts
-const DEFAULT_TRADING_ENGINE_ADDRESS = '0xc1e04Adfa33cb46D3A9852188d97dE3C2FFF236F' as const
+// Get the directory of the current file
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+
+// Read the address from lib/address.ts at runtime
+// This ensures the bot always uses the same address as the frontend
+function getTradingEngineAddress(): `0x${string}` {
+  try {
+    const addressFile = join(__dirname, '../../lib/address.ts')
+    const content = readFileSync(addressFile, 'utf-8')
+    const match = content.match(/export const tradingEngineAddress = ["']([^"']+)["']/)
+    if (match && match[1]) {
+      return match[1] as `0x${string}`
+    }
+  } catch (error) {
+    console.warn('Could not read address from lib/address.ts, using fallback')
+  }
+  // Fallback to hardcoded address
+  return '0xc1e04Adfa33cb46D3A9852188d97dE3C2FFF236F' as const
+}
+
+const DEFAULT_TRADING_ENGINE_ADDRESS = getTradingEngineAddress()
 
 dotenv.config()
 
@@ -45,7 +68,7 @@ export function loadConfig(): BotConfig {
   validatePrivateKey(privateKey)
 
   const contractAddress = process.env.TRADING_ENGINE_ADDRESS || DEFAULT_TRADING_ENGINE_ADDRESS
-  validateAddress(contractAddress)
+  validateAddress(contractAddress as string)
 
   const rpcUrl = getEnvVar('RPC_URL', 'https://rpc.test.mezo.org')
   const chainId = getEnvNumber('CHAIN_ID', 31611)
