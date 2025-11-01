@@ -12,6 +12,7 @@ import SystemHealth from "../system/system-health"
 import InsuranceFundCard from "./insurance-fund"
 import MusdReserveAdmin from "./musd-reserve"
 import RiskAndFeesAdmin from "./risk-and-fees"
+import OracleConfig from "./oracle-config"
 
 interface AdminPanelProps {
   className?: string
@@ -23,7 +24,7 @@ export default function AdminPanel({ className }: AdminPanelProps) {
   const { data: vaultBalance } = useVaultBalance(userAddress)
   const { data: vaultOwner } = useVaultOwner()
   
-  const [activeTab, setActiveTab] = useState<"overview" | "emergency" | "ownership" | "monitor" | "musd" | "risk">("overview")
+  const [activeTab, setActiveTab] = useState<"overview" | "emergency" | "ownership" | "monitor" | "musd" | "risk" | "oracle">("overview")
 
   // Access control
   if (isLoading) {
@@ -108,6 +109,7 @@ export default function AdminPanel({ className }: AdminPanelProps) {
               { id: "monitor", label: "Monitor", icon: "📈" },
               { id: "musd", label: "MUSD Reserve", icon: "🏦" },
               { id: "risk", label: "Risk & Fees", icon: "🛡️" },
+              { id: "oracle", label: "Oracle", icon: "🔮" },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -216,6 +218,10 @@ export default function AdminPanel({ className }: AdminPanelProps) {
 
           {activeTab === "risk" && (
             <RiskAndFeesAdmin />
+          )}
+
+          {activeTab === "oracle" && (
+            <OracleConfig />
           )}
         </div>
       </main>

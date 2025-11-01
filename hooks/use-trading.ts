@@ -1,5 +1,5 @@
 import { useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi'
-import { parseUnits, parseEther, decodeErrorResult, formatUnits } from 'viem'
+import { parseUnits, parseEther, decodeErrorResult, formatUnits, encodeFunctionData } from 'viem'
 import { useAccount } from 'wagmi'
 import { tradingEngineAddress, vaultAddress, fundingRateAddress } from '@/lib/address'
 import { TradingEngineABI } from '@/lib/abi/TradingEngine'
@@ -146,6 +146,7 @@ export function useTradingEnginePythOracle() {
 export function useTradingEngineRefreshMarkPrice() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract()
   const publicClient = usePublicClient()
+  const { address: userAddress } = useAccount()
   
   const refreshMarkPrice = async () => {
     try {
@@ -208,6 +209,90 @@ export function useTradingEngineRefreshMarkPrice() {
       } catch (markPriceErr: any) {
         console.warn('Could not read mark price:', markPriceErr?.message)
       }
+
+      // Check maxOracleMoveBps (oracle move protection)
+      let maxOracleMoveBps: bigint | undefined
+      try {
+        maxOracleMoveBps = await publicClient.readContract({
+          address: tradingEngineAddress,
+          abi: TradingEngineABI,
+          functionName: 'maxOracleMoveBps',
+        }) as bigint
+        console.log('Max oracle move BPS:', maxOracleMoveBps?.toString(), maxOracleMoveBps === BigInt(0) ? '(disabled)' : `(${Number(maxOracleMoveBps) / 100}%)`)
+      } catch (maxMoveErr: any) {
+        console.warn('Could not read maxOracleMoveBps:', maxMoveErr?.message)
+      }
+
+      // Try to peek at oracle price (tests PythOracle.getBtcUsdPrice without updating)
+      console.log('Attempting to peek at current oracle price (before update)...')
+      let oraclePriceBefore: bigint | undefined
+      let oraclePublishTime: bigint | undefined
+      try {
+        const peekResult = await publicClient.readContract({
+          address: tradingEngineAddress,
+          abi: TradingEngineABI,
+          functionName: 'peekOraclePrice',
+        }) as [bigint, bigint]
+        oraclePriceBefore = peekResult[0]
+        oraclePublishTime = peekResult[1]
+        console.log('✓ Oracle price peek successful:', {
+          price: oraclePriceBefore?.toString(),
+          priceUSD: oraclePriceBefore ? Number(oraclePriceBefore) / 1e18 : 'N/A',
+          publishTime: oraclePublishTime?.toString(),
+          publishTimeDate: oraclePublishTime ? new Date(Number(oraclePublishTime) * 1000).toISOString() : 'N/A',
+          ageSeconds: oraclePublishTime ? Math.floor(Date.now() / 1000) - Number(oraclePublishTime) : 'N/A'
+        })
+      } catch (peekErr: any) {
+        console.error('✗ Oracle price peek failed:', peekErr?.message)
+        console.error('This suggests the Pyth contract may not have the price feed updated yet.')
+        console.error('Full peek error:', peekErr)
+        
+        // If peek fails, it likely means price feed hasn't been updated in Pyth contract
+        if (peekErr?.message?.includes('not set') || peekErr?.message?.includes('revert') || peekErr?.shortMessage?.includes('execution reverted')) {
+          throw new Error('Oracle price feed not available. The Pyth contract may need to be updated first. Error: ' + peekErr?.message)
+        }
+      }
+
+      // Check if PythOracle contract exists by trying to read owner
+      console.log('Verifying PythOracle contract exists...')
+      try {
+        // Try to get bytecode to verify contract exists
+        const bytecode = await publicClient.getBytecode({ address: pythOracleAddress })
+        if (!bytecode || bytecode === '0x') {
+          throw new Error('PythOracle contract does not exist at the configured address')
+        }
+        console.log('✓ PythOracle contract verified (has bytecode)')
+      } catch (verifyErr: any) {
+        console.error('✗ PythOracle contract verification failed:', verifyErr?.message)
+        throw new Error('PythOracle contract verification failed: ' + verifyErr?.message)
+      }
+      
+      // Check price freshness BEFORE attempting refresh
+      // If price is fresh enough, skip refresh (Mezo testnet rejects Hermes bytes)
+      const MAX_FRESH_AGE_SECONDS = 3600 // 1 hour
+      if (oraclePriceBefore && oraclePublishTime) {
+        const ageSeconds = Math.floor(Date.now() / 1000) - Number(oraclePublishTime)
+        const ageMinutes = Math.floor(ageSeconds / 60)
+        
+        console.log('\n=== PRICE FRESHNESS CHECK ===')
+        console.log(`Oracle price: ${formatUnits(oraclePriceBefore, 18)} USD`)
+        console.log(`Price age: ${ageMinutes} minutes (${ageSeconds} seconds)`)
+        console.log(`Max fresh age: ${MAX_FRESH_AGE_SECONDS / 60} minutes`)
+        
+        if (ageSeconds < MAX_FRESH_AGE_SECONDS && ageSeconds >= 0) {
+          console.log('✓ Price is fresh enough (< 1 hour old). Skipping refresh.')
+          console.log('Note: Mezo testnet Pyth contract rejects Hermes update bytes (network incompatibility).')
+          console.log('Using existing price which is still valid.')
+          return // Exit early - price is fresh, no refresh needed
+        } else if (ageSeconds < 0) {
+          console.warn('⚠️ Warning: Price timestamp is in the future. This may indicate a clock sync issue.')
+        } else {
+          console.warn(`⚠️ Price is stale (${ageMinutes} minutes old). Attempting refresh...`)
+          console.warn('Note: Refresh may fail due to Mezo testnet Pyth contract rejecting Hermes bytes.')
+        }
+      } else if (!oraclePriceBefore) {
+        console.warn('⚠️ No oracle price found. Attempting refresh (this may fail)...')
+      }
       
       console.log('Pre-flight checks passed. Proceeding with price refresh...')
       
@@ -219,23 +304,343 @@ export function useTradingEngineRefreshMarkPrice() {
         throw new Error('Failed to fetch Hermes update bytes')
       }
       
-      // 2. Estimate fee (use reasonable buffer, excess refunded by contract)
-      const feeEstimate = parseEther('0.001') // 0.001 ETH buffer
+      // Validate and format update bytes
+      console.log('\n=== VALIDATING UPDATE BYTES FORMAT ===')
+      const validatedBytes: `0x${string}`[] = []
+      for (let i = 0; i < updateBytes.length; i++) {
+        const byteStr = updateBytes[i]
+        if (typeof byteStr !== 'string') {
+          throw new Error(`Update byte at index ${i} is not a string: ${typeof byteStr}`)
+        }
+        // Ensure it starts with 0x and is a valid hex string
+        let formattedByte: `0x${string}`
+        if (byteStr.startsWith('0x')) {
+          formattedByte = byteStr as `0x${string}`
+        } else {
+          formattedByte = `0x${byteStr}` as `0x${string}`
+        }
+        // Validate hex format
+        if (!/^0x[0-9a-fA-F]+$/.test(formattedByte)) {
+          throw new Error(`Update byte at index ${i} is not valid hex: ${byteStr.substring(0, 20)}...`)
+        }
+        validatedBytes.push(formattedByte)
+        if (i === 0) {
+          console.log(`✓ First update byte validated: ${formattedByte.length} chars, starts with ${formattedByte.substring(0, 10)}...`)
+          // Check if it looks like Pyth format (should start with magic bytes)
+          if (formattedByte.length > 10) {
+            const magicBytes = formattedByte.substring(2, 10) // First 4 bytes after 0x
+            console.log(`  Magic bytes: ${magicBytes} (${magicBytes === '504e4155' ? 'PNAU ✓' : 'unknown format'})`)
+          }
+        }
+      }
+      console.log(`✓ All ${validatedBytes.length} update bytes validated`)
       
-      console.log('Calling refreshMarkPrice with Hermes bytes...', {
-        updateBytesCount: updateBytes.length,
-        feeEstimate: feeEstimate.toString(),
-        pythOracleAddress,
-        currentMarkPrice: markPrice ? Number(markPrice) / 1e18 : 'N/A'
+      // 2. Estimate fee (use reasonable buffer, excess refunded by contract)
+      // Try higher fee first if previous attempts failed
+      let feeEstimate = parseEther('0.001') // 0.001 ETH buffer
+      
+      console.log('\n=== PRICE REFRESH PREPARATION ===')
+      console.log('Update bytes count:', validatedBytes.length)
+      console.log('Fee estimate:', feeEstimate.toString(), `(${formatUnits(feeEstimate, 18)} ETH)`)
+      console.log('PythOracle address:', pythOracleAddress)
+      console.log('Current mark price:', markPrice ? `${formatUnits(markPrice, 18)} USD` : 'N/A')
+      if (oraclePriceBefore) {
+        console.log('Oracle price (before update):', `${formatUnits(oraclePriceBefore, 18)} USD`)
+      }
+      if (markPrice && oraclePriceBefore) {
+        const priceDiff = oraclePriceBefore > markPrice 
+          ? oraclePriceBefore - markPrice 
+          : markPrice - oraclePriceBefore
+        const priceDiffPercent = Number((priceDiff * BigInt(10000)) / markPrice)
+        console.log('Price difference:', `${formatUnits(priceDiff, 18)} USD`, `(${priceDiffPercent / 100}%)`)
+        if (maxOracleMoveBps && maxOracleMoveBps > BigInt(0) && priceDiffPercent > Number(maxOracleMoveBps)) {
+          console.error('⚠️ WARNING: Price difference exceeds maxOracleMoveBps!')
+          console.error(`Price diff: ${priceDiffPercent / 100}% > Max allowed: ${Number(maxOracleMoveBps) / 100}%`)
+        }
+      }
+
+      // 3. First try simulateContract to get better error information
+      console.log('\n=== SIMULATING TRANSACTION (GETTING REVERT REASON) ===')
+      try {
+        console.log('Attempting transaction simulation...')
+        if (!userAddress) {
+          throw new Error('User address required for simulation')
+        }
+        
+        // Use simulateContract which gives better error information than estimateGas
+        // Use validated bytes instead of raw updateBytes
+        const simulation = await publicClient.simulateContract({
+          account: userAddress,
+          address: tradingEngineAddress,
+          abi: TradingEngineABI,
+          functionName: 'refreshMarkPrice',
+          args: [validatedBytes],
+          value: feeEstimate,
+        })
+        
+        console.log('✓ Transaction simulation successful')
+        console.log('Simulation result:', {
+          request: simulation.request,
+          result: simulation.result,
+        })
+        
+      } catch (simulateErr: any) {
+        console.error('✗ Transaction simulation failed:', simulateErr?.message)
+        console.error('Simulation error details:', {
+          cause: simulateErr?.cause,
+          data: simulateErr?.data,
+          shortMessage: simulateErr?.shortMessage,
+          name: simulateErr?.name,
+        })
+        
+        // simulateContract usually provides better error data
+        let errorData: `0x${string}` | undefined
+        if (simulateErr?.cause?.data) {
+          errorData = simulateErr.cause.data
+        } else if (simulateErr?.data) {
+          errorData = simulateErr.data
+        } else if (simulateErr?.cause?.cause?.data) {
+          errorData = simulateErr.cause.cause.data
+        }
+        
+        console.error('Simulation error data:', errorData ? `${errorData.slice(0, 100)}...` : 'none')
+        
+        if (errorData && errorData.startsWith('0x') && errorData.length > 10) {
+          try {
+            const decoded = decodeErrorResult({
+              abi: TradingEngineABI,
+              data: errorData,
+            })
+            console.error('✓ DECODED REVERT REASON:', decoded)
+            const errorMsg = `Price refresh would fail: ${decoded.errorName || 'UnknownError'}${decoded.args ? ` - ${JSON.stringify(decoded.args)}` : ''}`
+            throw new Error(errorMsg)
+          } catch (decodeErr: any) {
+            console.error('Could not decode revert reason:', decodeErr?.message)
+            
+            // Try to extract error signature to identify common errors
+            const errorSig = errorData.slice(0, 10)
+            console.error('Error signature (first 4 bytes):', errorSig)
+            
+            // Common Solidity error signatures
+            const commonErrors: Record<string, string> = {
+              '0x4e487b71': 'Panic(uint256) - Division by zero, array overflow, etc.',
+              '0x08c379a0': 'Error(string) - Custom revert message',
+            }
+            
+            if (commonErrors[errorSig]) {
+              console.error('Likely error type:', commonErrors[errorSig])
+            }
+          }
+        }
+        
+        // Check for Pyth-specific error patterns
+        if (simulateErr?.message?.toLowerCase().includes('pyth') || 
+            simulateErr?.message?.toLowerCase().includes('update') ||
+            simulateErr?.message?.toLowerCase().includes('fee') ||
+            simulateErr?.message?.toLowerCase().includes('insufficient')) {
+          console.error('⚠️ This error likely originates from the Pyth contract')
+          console.error('The Pyth contract rejected the update bytes from Hermes.')
+          console.error('\n=== DIAGNOSIS ===')
+          console.error('The update bytes are correctly formatted (PNAU magic bytes present),')
+          console.error('but the Pyth contract on Mezo testnet is rejecting them.')
+          console.error('This indicates a network-specific incompatibility.')
+          console.error('\n=== POSSIBLE REASONS ===')
+          console.error('1. Mezo testnet Pyth contract may require update bytes from a Mezo-specific source')
+          console.error('2. The update bytes may need different signatures for Mezo testnet')
+          console.error('3. There may be a version mismatch between Hermes and the Mezo Pyth contract')
+          console.error('\n=== CURRENT ORACLE STATE ===')
+          if (oraclePriceBefore) {
+            const ageSeconds = oraclePublishTime ? Math.floor((Date.now() / 1000) - Number(oraclePublishTime)) : null
+            const ageMinutes: number | null = ageSeconds !== null ? Math.floor(ageSeconds / 60) : null
+            console.error(`Oracle price: ${formatUnits(oraclePriceBefore, 18)} USD`)
+            const ageStr = ageMinutes !== null ? `${ageMinutes} minutes` : 'unknown'
+            console.error(`Price age: ${ageStr}`)
+            if (oraclePublishTime && ageMinutes !== null && ageMinutes < 60) {
+              console.warn('⚠️ Price is fresh (< 1 hour old). Consider proceeding without refresh if contract allows.')
+            } else if (ageMinutes !== null) {
+              console.error(`⚠️ Price is stale (${ageMinutes} minutes old). Refresh is required.`)
+            }
+          }
+          console.error('\n=== SUGGESTED FIX ===')
+          console.error('Contact Mezo team or check Mezo documentation for:')
+          console.error('- Mezo-specific Pyth update endpoint')
+          console.error('- Alternative method to update Pyth prices on Mezo testnet')
+          console.error('- Whether Mezo testnet supports Hermes update bytes at all')
+          
+          // If price exists but is stale, provide more specific error
+          if (oraclePriceBefore && oraclePublishTime) {
+            const ageMinutes = Math.floor((Date.now() / 1000 - Number(oraclePublishTime)) / 60)
+            if (ageMinutes >= 60) {
+              throw new Error(`Pyth price refresh failed: Mezo testnet rejects Hermes update bytes (network incompatibility). Current price is ${ageMinutes} minutes old (stale). The price must be refreshed manually by an admin, or you need Mezo-specific update bytes. Check Mezo documentation for the correct way to update Pyth prices on their testnet.`)
+            }
+          }
+          
+          throw new Error('Pyth contract rejected Hermes update bytes. The Mezo testnet Pyth contract appears to require a different update source. The bytes are correctly formatted but rejected by the contract. Please check Mezo documentation for the correct way to update Pyth prices on their testnet.')
+        }
+        
+        // If we can't decode, throw the simulation error
+        throw simulateErr
+      }
+
+      // 4. Try to estimate gas (simulation succeeded, so this should work)
+      console.log('\n=== ESTIMATING GAS ===')
+      let gasEstimate: bigint | undefined
+      // Encode function data outside try block so it's accessible in catch block
+      const encodedData = encodeFunctionData({
+        abi: TradingEngineABI,
+        functionName: 'refreshMarkPrice',
+        args: [validatedBytes],
       })
       
-      // 3. Call refreshMarkPrice with bytes and ETH for fee
+      try {
+        console.log('Attempting gas estimation...')
+        if (!userAddress) {
+          console.warn('No user address available for gas estimation, skipping...')
+          gasEstimate = undefined
+        } else {
+          gasEstimate = await publicClient.estimateGas({
+            account: userAddress,
+            to: tradingEngineAddress,
+            data: encodedData,
+            value: feeEstimate,
+          })
+          console.log('✓ Gas estimation successful:', gasEstimate?.toString(), 'gas units')
+        }
+      } catch (gasErr: any) {
+        console.error('✗ Gas estimation failed:', gasErr?.message)
+        console.error('Gas estimation error details:', {
+          cause: gasErr?.cause,
+          data: gasErr?.data,
+          shortMessage: gasErr?.shortMessage,
+          name: gasErr?.name,
+          stack: gasErr?.stack,
+        })
+
+        // Try to extract error data from multiple nested levels
+        let gasErrorData: `0x${string}` | undefined
+        const errorChain: any[] = []
+        let currentErr: any = gasErr
+        
+        // Walk the error chain to find all error data
+        while (currentErr) {
+          errorChain.push({
+            message: currentErr?.message,
+            name: currentErr?.name,
+            data: currentErr?.data,
+            cause: currentErr?.cause?.message || currentErr?.cause?.shortMessage,
+          })
+          if (currentErr?.cause?.data) {
+            gasErrorData = currentErr.cause.data
+          } else if (currentErr?.data && !gasErrorData) {
+            gasErrorData = currentErr.data
+          }
+          currentErr = currentErr?.cause
+        }
+        
+        console.error('Error chain:', errorChain)
+        console.error('Extracted error data:', gasErrorData ? `${gasErrorData.slice(0, 100)}...` : 'none')
+
+        // Try to decode with TradingEngine ABI
+        if (gasErrorData && gasErrorData.startsWith('0x') && gasErrorData.length > 10) {
+          try {
+            const decodedGasError = decodeErrorResult({
+              abi: TradingEngineABI,
+              data: gasErrorData,
+            })
+            console.error('✓ Decoded TradingEngine error:', decodedGasError)
+            const errorMsg = `Gas estimation failed: ${decodedGasError.errorName || 'UnknownError'}${decodedGasError.args ? ` - ${JSON.stringify(decodedGasError.args)}` : ''}`
+            throw new Error(errorMsg)
+          } catch (decodeErr: any) {
+            console.error('Could not decode with TradingEngine ABI:', decodeErr?.message)
+            
+            // Try to extract error signature to identify common errors
+            const errorSig = gasErrorData.slice(0, 10)
+            console.error('Error signature (first 4 bytes):', errorSig)
+            
+            // Common Solidity error signatures
+            const commonErrors: Record<string, string> = {
+              '0x4e487b71': 'Panic(uint256) - Division by zero, array overflow, etc.',
+              '0x08c379a0': 'Error(string) - Custom revert message',
+              '0x': 'Empty error data',
+            }
+            
+            if (commonErrors[errorSig]) {
+              console.error('Likely error type:', commonErrors[errorSig])
+            }
+            
+            // Check if it might be a Pyth-specific error
+            // Pyth errors are usually from the IPyth contract, not our contracts
+            if (gasErr?.message?.toLowerCase().includes('pyth') || 
+                gasErr?.shortMessage?.toLowerCase().includes('pyth') ||
+                gasErr?.message?.toLowerCase().includes('update') ||
+                gasErr?.message?.toLowerCase().includes('fee')) {
+              console.error('⚠️ This error likely originates from the Pyth contract, not TradingEngine')
+              console.error('Possible causes:')
+              console.error('  - Update bytes are for wrong network (mainnet vs testnet)')
+              console.error('  - Update bytes format is invalid')
+              console.error('  - Insufficient fee for Pyth update')
+              console.error('  - Price feed ID mismatch')
+              throw new Error('Pyth contract rejected the update. This usually means the Hermes update bytes are for the wrong network (mainnet vs testnet) or are invalid. Check that you are using the correct Hermes endpoint for Mezo testnet.')
+            }
+          }
+        }
+
+        // If gas estimation fails with insufficient fee, try higher fee
+        if (gasErr?.message?.includes('insufficient') || gasErr?.shortMessage?.includes('insufficient')) {
+          console.log('Attempting with higher fee (0.01 ETH)...')
+          feeEstimate = parseEther('0.01')
+          // Re-encode with updated fee (though data doesn't change, this ensures scope)
+          const retryEncodedData = encodeFunctionData({
+            abi: TradingEngineABI,
+            functionName: 'refreshMarkPrice',
+            args: [validatedBytes],
+          })
+          try {
+            if (!userAddress) {
+              console.warn('No user address available for retry gas estimation')
+              throw gasErr // Re-throw original error if no address
+            }
+            gasEstimate = await publicClient.estimateGas({
+              account: userAddress,
+              to: tradingEngineAddress,
+              data: retryEncodedData,
+              value: feeEstimate,
+            })
+            console.log('✓ Gas estimation successful with higher fee:', gasEstimate?.toString())
+          } catch (retryErr: any) {
+            console.error('✗ Gas estimation still failed with higher fee:', retryErr?.message)
+            
+            // Final attempt: provide user-friendly diagnostic
+            const diagnosticMsg = 'Price refresh failed during gas estimation. The Pyth contract rejected the update bytes.\n\n' +
+              'Most likely causes:\n' +
+              '• Update bytes are for wrong network (check Hermes endpoint)\n' +
+              '• Update bytes format is invalid or expired\n' +
+              '• Network-specific Pyth contract requirements\n\n' +
+              'Please verify:\n' +
+              '1. You are using the correct Hermes endpoint for Mezo testnet\n' +
+              '2. The update bytes are fresh (not expired)\n' +
+              '3. The Pyth contract address matches your network\n\n' +
+              `Error: ${retryErr?.message || gasErr?.message}`
+            
+            throw new Error(diagnosticMsg)
+          }
+        } else {
+          // Provide diagnostic for non-insufficient errors
+          const diagnosticMsg = 'Price refresh failed during gas estimation. The transaction would revert.\n\n' +
+            'Check the console logs above for detailed error information.\n' +
+            `Error: ${gasErr?.message || 'Unknown error'}`
+          throw new Error(diagnosticMsg)
+        }
+       }
+       
+       // 5. Call refreshMarkPrice with bytes and ETH for fee
+      console.log('\n=== EXECUTING TRANSACTION ===')
       try {
         const txHash = await writeContractAsync({
           address: tradingEngineAddress,
           abi: TradingEngineABI,
           functionName: 'refreshMarkPrice',
-          args: [updateBytes],
+          args: [validatedBytes],
           value: feeEstimate, // Pyth will use what it needs and refund excess
         })
         
@@ -246,41 +651,81 @@ export function useTradingEngineRefreshMarkPrice() {
         
         console.log('Price refresh successful')
       } catch (writeError: any) {
-        console.error('=== REFRESH MARK PRICE WRITE ERROR ===')
-        console.error('Write error:', writeError)
+        console.error('\n=== REFRESH MARK PRICE WRITE ERROR ===')
+        console.error('Error type:', typeof writeError)
+        console.error('Error name:', writeError?.name)
+        console.error('Error message:', writeError?.message)
+        console.error('Error shortMessage:', writeError?.shortMessage)
+        console.error('Error code:', writeError?.code)
         
-        // Try to decode error from multiple possible locations
+        // Deep log error structure
+        console.error('Error structure:', {
+          hasCause: !!writeError?.cause,
+          hasData: !!writeError?.data,
+          causeKeys: writeError?.cause ? Object.keys(writeError.cause) : [],
+          keys: Object.keys(writeError || {}),
+        })
+
+        // Try to extract error data from multiple possible locations
         let decodedError: any = null
         let errorData: `0x${string}` | undefined
         
         // Check various error data locations - viem error structure can vary
-        if (writeError?.cause?.data) {
-          errorData = writeError.cause.data
-        } else if (writeError?.data) {
-          errorData = writeError.data
-        } else if (writeError?.cause?.reason?.data) {
-          errorData = writeError.cause.reason.data
-        } else if (writeError?.cause?.data?.data) {
-          errorData = writeError.cause.data.data
+        const errorDataPaths = [
+          writeError?.cause?.data,
+          writeError?.data,
+          writeError?.cause?.reason?.data,
+          writeError?.cause?.data?.data,
+          writeError?.cause?.reason?.cause?.data,
+          writeError?.details,
+          writeError?.error?.data,
+        ]
+        
+        for (const potentialData of errorDataPaths) {
+          if (potentialData && typeof potentialData === 'string' && potentialData.startsWith('0x')) {
+            errorData = potentialData as `0x${string}`
+            console.log('Found error data at:', potentialData.substring(0, 20) + '...')
+            break
+          }
+        }
+
+        // Also try to extract from transaction data
+        if (!errorData && writeError?.transaction?.data) {
+          const txData = writeError.transaction.data
+          // Check if it's an error response (starts with error selector)
+          if (typeof txData === 'string' && txData.startsWith('0x')) {
+            console.log('Checking transaction data for error:', txData.substring(0, 20) + '...')
+          }
         }
         
         if (errorData && errorData.startsWith('0x')) {
+          console.log('Attempting to decode error data:', errorData.substring(0, 20) + '...')
           try {
             decodedError = decodeErrorResult({
               abi: TradingEngineABI,
               data: errorData,
             })
-            console.log('Decoded error from refreshMarkPrice:', decodedError)
+            console.error('✓ Decoded error from refreshMarkPrice:', {
+              errorName: decodedError.errorName,
+              args: decodedError.args,
+            })
             
             // Re-throw with decoded information
             const errorName = decodedError.errorName || 'UnknownError'
             const argsStr = decodedError.args ? ` Args: ${JSON.stringify(decodedError.args)}` : ''
             throw new Error(`Oracle update failed: ${errorName}${argsStr}`)
-          } catch (decodeErr) {
-            console.log('Could not decode refreshMarkPrice error:', decodeErr)
-            // Continue to throw original error
+          } catch (decodeErr: any) {
+            console.error('Could not decode refreshMarkPrice error:', decodeErr?.message)
+            // Log the raw error data for manual inspection
+            console.error('Raw error data (hex):', errorData)
+            console.error('Raw error data (first 200 chars):', errorData.substring(0, 200))
           }
+        } else {
+          console.error('No decodable error data found in error structure')
         }
+
+        // Log full error for debugging
+        console.error('Full error object:', JSON.stringify(writeError, Object.getOwnPropertyNames(writeError), 2))
         
         // If we couldn't decode, throw the original error to be handled below
         throw writeError
@@ -1001,6 +1446,15 @@ export function useEngineSetMaxOracleMoveBps() {
   }
   const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash })
   return { setMaxOracleMoveBps, hash, isPending, isConfirming, isConfirmed, error }
+}
+
+export function useEngineSetPythOracle() {
+  const { writeContract, data: hash, isPending, error } = useWriteContract()
+  const setPythOracle = (oracleAddress: `0x${string}`) => {
+    writeContract({ address: tradingEngineAddress, abi: TradingEngineABI, functionName: 'setPythOracle', args: [oracleAddress] })
+  }
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash })
+  return { setPythOracle, hash, isPending, isConfirming, isConfirmed, error }
 }
 
 // ============================================================================
