@@ -1,0 +1,31 @@
+{
+  "name": "hodlers-hedge-liquidation-bot",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Automated liquidation bot for Hodlers Hedge TradingEngine",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "test": "tsx src/test.ts"
+  },
+  "keywords": [
+    "liquidation",
+    "defi",
+    "bot",
+    "trading"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "viem": "^2.x",
+    "dotenv": "^16.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.0.0"
+  }
+}
+
