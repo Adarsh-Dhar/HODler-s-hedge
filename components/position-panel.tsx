@@ -69,15 +69,19 @@ export default function PositionPanel({
   const { toast } = useToast()
 
   // Use real position data or fallback to mock data
-  const positionSize = position?.exists ? Number(position.size) / 1e18 : 0
+  // Position size and margin are stored in tBTC units with 8 decimals
+  const positionSizeTbtc = position?.exists ? Number(position.size) / 1e8 : 0 // Convert from 8-decimal tBTC
   // Properly handle entryPrice conversion from BigInt (1e18 precision)
   const entryPriceRaw = position?.exists && position.entryPrice ? position.entryPrice : BigInt(0)
   const entryPrice = position?.exists && entryPriceRaw > BigInt(0) 
     ? Number(entryPriceRaw) / 1e18 
     : (position?.exists ? price : 42000) // If position exists but entryPrice is 0, use current price as fallback
   
+  // Position size in USD = size in tBTC * entry price in USD
+  const positionSize = positionSizeTbtc * entryPrice
+  
   const markPrice = price
-  const margin = position?.exists ? Number(position.margin) / 1e18 : 0
+  const margin = position?.exists ? Number(position.margin) / 1e8 : 0 // tBTC uses 8 decimals
   const liquidationPriceValue = liquidationPrice ? Number(liquidationPrice) / 1e18 : 39900
   const pnlTbtcNum = pnlTbtc !== undefined ? Number(pnlTbtc) / 1e18 : 0
   const pnlUsdNum = pnlUsd !== undefined ? Number(pnlUsd) / 1e18 : 0

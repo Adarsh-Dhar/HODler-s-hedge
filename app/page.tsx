@@ -94,9 +94,9 @@ export default function Home() {
   const calcUnrealizedPnL = () => {
     try {
       if (!position || !(position as any)?.exists) return { tbtc: BigInt(0), usd: BigInt(0) }
-      const entry = (position as any).entryPrice as bigint // 1e18
-      const size = (position as any).size as bigint // 1e18 tBTC value (size in tBTC)
-      if (entry === BigInt(0)) return { tbtc: BigInt(0), usd: BigInt(0) }
+      const entry = (position as any).entryPrice as bigint // 1e18 USD precision
+      const size = (position as any).size as bigint // 8-decimal tBTC (size in tBTC)
+      if (entry === BigInt(0) || size === BigInt(0)) return { tbtc: BigInt(0), usd: BigInt(0) }
       
       // Convert real-time price to bigint (1e18 precision)
       const currentPriceBigInt = BigInt(Math.floor(realTimePrice * 1e18))
@@ -108,10 +108,12 @@ export default function Home() {
         ? (currentPriceBigInt - entry)
         : (entry - currentPriceBigInt)
 
-      // PnL in tBTC = (size_tbtc * price_diff_usd) / entry_price_usd
-      const pnlTbtc = (size * diff) / entry // 1e18 tBTC
+      // PnL calculation: size is in 8-decimal tBTC, prices are in 18-decimal USD
+      // PnL in tBTC (18-decimal) = (size_8dec * diff_18dec * 1e10) / entry_18dec
+      // We multiply by 1e10 to convert size from 8 decimals to 18 decimals
+      const pnlTbtc = (size * diff * BigInt(1e10)) / entry // Result in 18-decimal tBTC
 
-      // PnL in USD = pnl_tbtc * current_price_usd
+      // PnL in USD = pnl_tbtc_18dec * current_price_18dec / 1e18
       const pnlUsd = (pnlTbtc * currentPriceBigInt) / BigInt("1000000000000000000") // 1e18 USD
 
       return { tbtc: pnlTbtc, usd: pnlUsd }

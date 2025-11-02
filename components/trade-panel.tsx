@@ -106,9 +106,10 @@ export default function TradePanel({
   // Check if position is truly active (not just exists flag, but also has size/margin)
   // This handles edge cases where position might have exists=true but size/margin=0
   // After closing, the position might have exists=false but still have cached data
-  const currentPositionSize = currentPosition?.size ? Number(currentPosition.size) / 1e18 : 0
-  const currentPositionMargin = currentPosition?.margin ? Number(currentPosition.margin) / 1e18 : 0
-  const hasActivePosition = currentPosition?.exists && currentPositionSize > 0 && currentPositionMargin > 0
+  // Position size and margin are stored in tBTC with 8 decimals
+  const currentPositionSizeTbtc = currentPosition?.size ? Number(currentPosition.size) / 1e8 : 0
+  const currentPositionMargin = currentPosition?.margin ? Number(currentPosition.margin) / 1e8 : 0
+  const hasActivePosition = currentPosition?.exists && currentPositionSizeTbtc > 0 && currentPositionMargin > 0
   
   const isValid = margin > 0 && margin <= availableBalance && leverage >= 1 && leverage <= maxLeverageValue && !hasActivePosition
   
