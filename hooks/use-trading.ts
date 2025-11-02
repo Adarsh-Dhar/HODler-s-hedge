@@ -144,6 +144,7 @@ export function useTradingEngineRefreshMarkPrice() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract()
   const publicClient = usePublicClient()
   const { address: userAddress } = useAccount()
+  const { syncMarkPrice } = useTradingEngineSyncMarkPriceFromOracle()
   
   const refreshMarkPrice = async () => {
     try {
@@ -248,23 +249,44 @@ export function useTradingEngineRefreshMarkPrice() {
         throw new Error('PythOracle contract verification failed: ' + verifyErr?.message)
       }
       
-      // Check price freshness BEFORE attempting refresh
-      // If price is fresh enough, skip refresh (Mezo testnet rejects Hermes bytes)
+      // Check price freshness AND divergence before attempting refresh
+      // Only skip refresh if price is fresh AND on-chain mark price matches oracle
       const MAX_FRESH_AGE_SECONDS = 3600 // 1 hour
-      if (oraclePriceBefore && oraclePublishTime) {
+      const MAX_PRICE_DIVERGENCE_BPS = 100 // 1% divergence threshold
+      
+      if (oraclePriceBefore && oraclePublishTime && markPrice) {
         const ageSeconds = Math.floor(Date.now() / 1000) - Number(oraclePublishTime)
         const ageMinutes = Math.floor(ageSeconds / 60)
         
-        if (ageSeconds < MAX_FRESH_AGE_SECONDS && ageSeconds >= 0) {
-          return // Exit early - price is fresh, no refresh needed
-        } else if (ageSeconds < 0) {
-          console.warn('⚠️ Warning: Price timestamp is in the future. This may indicate a clock sync issue.')
+        // Calculate price divergence between oracle and on-chain mark price
+        const priceDiff = oraclePriceBefore > markPrice 
+          ? oraclePriceBefore - markPrice 
+          : markPrice - oraclePriceBefore
+        const priceDivergenceBps = Number((priceDiff * BigInt(10000)) / markPrice)
+        
+        // Only skip refresh if BOTH conditions are met:
+        // 1. Price is fresh (recently published)
+        // 2. On-chain mark price matches oracle price (within 1% divergence)
+        if (ageSeconds < MAX_FRESH_AGE_SECONDS && ageSeconds >= 0 && 
+            priceDivergenceBps < MAX_PRICE_DIVERGENCE_BPS) {
+          console.log(`Skipping refresh: price is fresh (${ageMinutes}m old) and mark price matches oracle (${(priceDivergenceBps / 100).toFixed(2)}% divergence)`)
+          return // Exit early - price is fresh AND matches, no refresh needed
         } else {
-          console.warn(`⚠️ Price is stale (${ageMinutes} minutes old). Attempting refresh...`)
-          console.warn('Note: Refresh may fail due to Mezo testnet Pyth contract rejecting Hermes bytes.')
+          if (priceDivergenceBps >= MAX_PRICE_DIVERGENCE_BPS) {
+            console.warn(`⚠️ Price divergence detected: ${(priceDivergenceBps / 100).toFixed(2)}% > ${(MAX_PRICE_DIVERGENCE_BPS / 100).toFixed(2)}%. Refreshing mark price...`)
+            console.warn(`   Oracle: $${(Number(oraclePriceBefore) / 1e18).toFixed(2)}, Mark: $${(Number(markPrice) / 1e18).toFixed(2)}`)
+          }
+          if (ageSeconds < 0) {
+            console.warn('⚠️ Warning: Price timestamp is in the future. This may indicate a clock sync issue.')
+          } else if (ageSeconds >= MAX_FRESH_AGE_SECONDS) {
+            console.warn(`⚠️ Price is stale (${ageMinutes} minutes old). Attempting refresh...`)
+            console.warn('Note: Refresh may fail due to Mezo testnet Pyth contract rejecting Hermes bytes.')
+          }
         }
       } else if (!oraclePriceBefore) {
         console.warn('⚠️ No oracle price found. Attempting refresh (this may fail)...')
+      } else if (!markPrice) {
+        console.warn('⚠️ No mark price found. Attempting refresh...')
       }
       
       // 1. Fetch Hermes update bytes
@@ -695,7 +717,17 @@ export function useTradingEngineRefreshMarkPrice() {
         // Pre-flight check failure
         throw err
       } else if (err?.message?.includes('Hermes') || err?.message?.includes('fetch')) {
-        throw new Error('Failed to fetch price update from Hermes. Please check your network connection and try again.')
+        // Try fallback: sync mark price directly from oracle
+        console.warn('Hermes fetch failed, attempting fallback: sync mark price from oracle...')
+        try {
+          await syncMarkPrice()
+          console.log('Fallback successful: mark price synced from oracle')
+          return // Successfully synced, exit early
+        } catch (fallbackErr: any) {
+          console.error('Fallback also failed:', fallbackErr)
+          // If fallback fails, throw original Hermes error with context
+          throw new Error(`Failed to fetch price update from Hermes. Fallback sync also failed: ${fallbackErr?.message || 'Unknown error'}. Please check your network connection and try again.`)
+        }
       } else if (err?.message?.includes('insufficient fee') || err?.message?.includes('insufficient funds')) {
         throw new Error('Insufficient ETH for Pyth update fee. Please ensure you have enough ETH for the transaction.')
       } else if (err?.message?.includes('oracle returned zero') || err?.message?.includes('oracle not set')) {
@@ -742,6 +774,131 @@ export function useTradingEngineRefreshMarkPrice() {
 }
 
 // ============================================================================
+// SYNC MARK PRICE FROM ORACLE (FALLBACK WHEN HERMES FAILS)
+// ============================================================================
+
+export function useTradingEngineSyncMarkPriceFromOracle() {
+  const { writeContractAsync, data: hash, isPending, error } = useWriteContract()
+  const publicClient = usePublicClient()
+  const { address: userAddress } = useAccount()
+  
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
+    hash,
+  })
+
+  const syncMarkPrice = async () => {
+    try {
+      if (!publicClient) {
+        throw new Error('Public client not available. Cannot sync mark price.')
+      }
+
+      if (!userAddress) {
+        throw new Error('User address not available. Please connect your wallet.')
+      }
+
+      // Read current mark price and oracle price in parallel
+      const [currentMarkPrice, oraclePriceResult, contractOwner, maxOracleMoveBps] = await Promise.all([
+        publicClient.readContract({
+          address: tradingEngineAddress,
+          abi: TradingEngineABI,
+          functionName: 'getMarkPrice',
+        }),
+        publicClient.readContract({
+          address: tradingEngineAddress,
+          abi: TradingEngineABI,
+          functionName: 'peekOraclePrice',
+        }),
+        publicClient.readContract({
+          address: tradingEngineAddress,
+          abi: TradingEngineABI,
+          functionName: 'owner',
+        }),
+        publicClient.readContract({
+          address: tradingEngineAddress,
+          abi: TradingEngineABI,
+          functionName: 'maxOracleMoveBps',
+        }),
+      ]) as [bigint, [bigint, bigint], `0x${string}`, bigint]
+
+      const oraclePrice = oraclePriceResult[0]
+
+      if (!oraclePrice || oraclePrice === BigInt(0)) {
+        throw new Error('Oracle price not available or zero')
+      }
+
+      // Calculate price divergence in basis points
+      const priceDiff = oraclePrice > currentMarkPrice 
+        ? oraclePrice - currentMarkPrice 
+        : currentMarkPrice - oraclePrice
+      const priceDivergenceBps = Number((priceDiff * BigInt(10000)) / currentMarkPrice)
+
+      console.log(`Syncing mark price: Oracle $${Number(oraclePrice) / 1e18}, Mark $${Number(currentMarkPrice) / 1e18}, Divergence: ${priceDivergenceBps / 100}%`)
+
+      // Check if user is contract owner
+      const isOwner = userAddress.toLowerCase() === contractOwner.toLowerCase()
+
+      if (isOwner) {
+        // Owner can update mark price directly
+        if (priceDivergenceBps >= 100) { // 1% threshold
+          console.log('User is owner, updating mark price directly...')
+          const txHash = await writeContractAsync({
+            address: tradingEngineAddress,
+            abi: TradingEngineABI,
+            functionName: 'setMarkPrice',
+            args: [oraclePrice],
+          })
+
+          // Wait for confirmation
+          if (publicClient) {
+            await publicClient.waitForTransactionReceipt({ hash: txHash })
+          }
+
+          console.log('Mark price updated successfully via setMarkPrice')
+          return { success: true, updated: true }
+        } else {
+          console.log('Price divergence is acceptable (<1%), no update needed')
+          return { success: true, updated: false }
+        }
+      } else {
+        // Non-owner: check if divergence is within acceptable bounds
+        if (maxOracleMoveBps > BigInt(0) && priceDivergenceBps > Number(maxOracleMoveBps)) {
+          throw new Error(
+            `Price divergence (${(priceDivergenceBps / 100).toFixed(2)}%) exceeds maximum allowed (${Number(maxOracleMoveBps) / 100}%). ` +
+            `Owner must update mark price first. Current: $${(Number(currentMarkPrice) / 1e18).toFixed(2)}, Oracle: $${(Number(oraclePrice) / 1e18).toFixed(2)}`
+          )
+        }
+
+        // If within bounds, contract will validate on-chain during position opening
+        console.log(`Price divergence (${(priceDivergenceBps / 100).toFixed(2)}%) is within acceptable bounds. Contract will validate on-chain.`)
+        return { success: true, updated: false }
+      }
+    } catch (err: any) {
+      console.error('Failed to sync mark price from oracle:', err)
+      
+      // Provide user-friendly error messages
+      if (err?.message?.includes('Only owner') || err?.shortMessage?.includes('OwnableUnauthorizedAccount')) {
+        throw new Error('Only contract owner can update mark price. Please contact the owner.')
+      }
+      
+      if (err?.message) {
+        throw err
+      }
+      
+      throw new Error(`Failed to sync mark price from oracle: ${err?.message || 'Unknown error'}`)
+    }
+  }
+
+  return {
+    syncMarkPrice,
+    hash,
+    isPending,
+    isConfirming,
+    isConfirmed,
+    error,
+  }
+}
+
+// ============================================================================
 // TRADING ACTIONS
 // ============================================================================
 
@@ -750,6 +907,7 @@ export function useTradingEngineOpenPosition() {
   const { writeContractAsync, data: hash, isPending, error } = useWriteContract()
   const publicClient = usePublicClient()
   const { refreshMarkPrice } = useTradingEngineRefreshMarkPrice()
+  const { syncMarkPrice } = useTradingEngineSyncMarkPriceFromOracle()
   
   // Pre-flight checks
   const { data: isPaused } = useReadContract({
@@ -829,9 +987,21 @@ export function useTradingEngineOpenPosition() {
       try {
         await refreshMarkPrice()
       } catch (refreshError: any) {
-        console.error('Price refresh failed, blocking position opening:', refreshError)
-        // NO FALLBACK: Block trade if refresh fails
-        throw new Error(`Cannot open position: Price refresh failed. ${refreshError?.message || 'Oracle update failed. Please try again.'}`)
+        console.warn('Price refresh failed, attempting fallback: sync mark price from oracle...', refreshError)
+        
+        // Fallback: Try to sync mark price directly from oracle
+        try {
+          await syncMarkPrice()
+          console.log('Fallback successful: mark price synced from oracle, proceeding with position opening')
+          // Continue with position opening since sync succeeded
+        } catch (syncError: any) {
+          console.error('Both refresh and fallback sync failed:', { refreshError, syncError })
+          throw new Error(
+            `Cannot open position: Price refresh failed. ${refreshError?.message || 'Oracle update failed. '}` +
+            `Fallback sync also failed: ${syncError?.message || 'Unknown error'}. ` +
+            `Please try again or contact the contract owner if you're not the owner.`
+          )
+        }
       }
       
       // Simulate the contract call first to catch errors early

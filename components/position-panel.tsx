@@ -86,9 +86,9 @@ export default function PositionPanel({
   // Format funding payment
   const fundingPaymentValue = fundingPayment ? Number(fundingPayment) / 1e18 : 0
 
-  // Calculate position duration
+  // Calculate position duration (ensure non-negative to handle clock sync issues)
   const positionDuration = position?.openTimestamp 
-    ? Date.now() / 1000 - Number(position.openTimestamp)
+    ? Math.max(0, Math.floor(Date.now() / 1000) - Number(position.openTimestamp))
     : 0
 
   // Format time until next funding
@@ -256,7 +256,10 @@ export default function PositionPanel({
                     <div>
                       <p className="text-muted-foreground text-xs uppercase tracking-wide">Position Duration</p>
                       <p className="text-foreground font-semibold mt-1">
-                        {Math.floor(positionDuration / 3600)}h {Math.floor((positionDuration % 3600) / 60)}m
+                        {positionDuration > 0
+                          ? `${Math.floor(positionDuration / 3600)}h ${Math.floor((positionDuration % 3600) / 60)}m`
+                          : "0m"
+                        }
                       </p>
                     </div>
                     <div>
