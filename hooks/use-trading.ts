@@ -1,6 +1,7 @@
 import { useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi'
 import { parseUnits, parseEther, decodeErrorResult, formatUnits, encodeFunctionData } from 'viem'
 import { useAccount } from 'wagmi'
+import { useQueryClient } from '@tanstack/react-query'
 import { tradingEngineAddress, vaultAddress, fundingRateAddress } from '@/lib/address'
 import { TradingEngineABI } from '@/lib/abi/TradingEngine'
 import { VaultABI } from '@/lib/abi/Vault'
@@ -16,7 +17,6 @@ export function useContractSetup() {
   
   const setupVaultReference = async () => {
     try {
-      console.log('Setting up Vault tradingEngine reference...')
       await writeContract({
         address: vaultAddress,
         abi: VaultABI,
@@ -31,7 +31,6 @@ export function useContractSetup() {
   
   const setupFundingRateReference = async () => {
     try {
-      console.log('Setting up FundingRate tradingEngine reference...')
       await writeContract({
         address: fundingRateAddress,
         abi: FundingRateABI,
@@ -46,10 +45,8 @@ export function useContractSetup() {
   
   const setupAllReferences = async () => {
     try {
-      console.log('Setting up all contract references...')
       await setupVaultReference()
       await setupFundingRateReference()
-      console.log('All contract references set up successfully!')
     } catch (err: any) {
       console.error('Error setting up contract references:', err)
       throw err
@@ -151,8 +148,6 @@ export function useTradingEngineRefreshMarkPrice() {
   const refreshMarkPrice = async () => {
     try {
       // Pre-flight diagnostic checks
-      console.log('=== REFRESH MARK PRICE PRE-FLIGHT CHECKS ===')
-      
       if (!publicClient) {
         throw new Error('Public client not available. Cannot check contract state.')
       }
@@ -165,7 +160,6 @@ export function useTradingEngineRefreshMarkPrice() {
           abi: TradingEngineABI,
           functionName: 'paused',
         }) as boolean
-        console.log('Contract paused status:', isPaused)
         if (isPaused) {
           throw new Error('Contract is paused. Trading is temporarily disabled.')
         }
@@ -184,7 +178,6 @@ export function useTradingEngineRefreshMarkPrice() {
           abi: TradingEngineABI,
           functionName: 'pythOracle',
         }) as `0x${string}`
-        console.log('Pyth oracle address:', pythOracleAddress)
         
         if (!pythOracleAddress || pythOracleAddress === '0x0000000000000000000000000000000000000000') {
           throw new Error('Pyth oracle not configured. Oracle address is zero. Please contact the contract owner.')
@@ -205,7 +198,6 @@ export function useTradingEngineRefreshMarkPrice() {
           abi: TradingEngineABI,
           functionName: 'getMarkPrice',
         }) as bigint
-        console.log('Current mark price:', markPrice?.toString(), `(${markPrice ? Number(markPrice) / 1e18 : 'N/A'} USD)`)
       } catch (markPriceErr: any) {
         console.warn('Could not read mark price:', markPriceErr?.message)
       }
@@ -218,13 +210,11 @@ export function useTradingEngineRefreshMarkPrice() {
           abi: TradingEngineABI,
           functionName: 'maxOracleMoveBps',
         }) as bigint
-        console.log('Max oracle move BPS:', maxOracleMoveBps?.toString(), maxOracleMoveBps === BigInt(0) ? '(disabled)' : `(${Number(maxOracleMoveBps) / 100}%)`)
       } catch (maxMoveErr: any) {
         console.warn('Could not read maxOracleMoveBps:', maxMoveErr?.message)
       }
 
       // Try to peek at oracle price (tests PythOracle.getBtcUsdPrice without updating)
-      console.log('Attempting to peek at current oracle price (before update)...')
       let oraclePriceBefore: bigint | undefined
       let oraclePublishTime: bigint | undefined
       try {
@@ -235,13 +225,6 @@ export function useTradingEngineRefreshMarkPrice() {
         }) as [bigint, bigint]
         oraclePriceBefore = peekResult[0]
         oraclePublishTime = peekResult[1]
-        console.log('✓ Oracle price peek successful:', {
-          price: oraclePriceBefore?.toString(),
-          priceUSD: oraclePriceBefore ? Number(oraclePriceBefore) / 1e18 : 'N/A',
-          publishTime: oraclePublishTime?.toString(),
-          publishTimeDate: oraclePublishTime ? new Date(Number(oraclePublishTime) * 1000).toISOString() : 'N/A',
-          ageSeconds: oraclePublishTime ? Math.floor(Date.now() / 1000) - Number(oraclePublishTime) : 'N/A'
-        })
       } catch (peekErr: any) {
         console.error('✗ Oracle price peek failed:', peekErr?.message)
         console.error('This suggests the Pyth contract may not have the price feed updated yet.')
@@ -254,14 +237,12 @@ export function useTradingEngineRefreshMarkPrice() {
       }
 
       // Check if PythOracle contract exists by trying to read owner
-      console.log('Verifying PythOracle contract exists...')
       try {
         // Try to get bytecode to verify contract exists
         const bytecode = await publicClient.getBytecode({ address: pythOracleAddress })
         if (!bytecode || bytecode === '0x') {
           throw new Error('PythOracle contract does not exist at the configured address')
         }
-        console.log('✓ PythOracle contract verified (has bytecode)')
       } catch (verifyErr: any) {
         console.error('✗ PythOracle contract verification failed:', verifyErr?.message)
         throw new Error('PythOracle contract verification failed: ' + verifyErr?.message)
@@ -274,15 +255,7 @@ export function useTradingEngineRefreshMarkPrice() {
         const ageSeconds = Math.floor(Date.now() / 1000) - Number(oraclePublishTime)
         const ageMinutes = Math.floor(ageSeconds / 60)
         
-        console.log('\n=== PRICE FRESHNESS CHECK ===')
-        console.log(`Oracle price: ${formatUnits(oraclePriceBefore, 18)} USD`)
-        console.log(`Price age: ${ageMinutes} minutes (${ageSeconds} seconds)`)
-        console.log(`Max fresh age: ${MAX_FRESH_AGE_SECONDS / 60} minutes`)
-        
         if (ageSeconds < MAX_FRESH_AGE_SECONDS && ageSeconds >= 0) {
-          console.log('✓ Price is fresh enough (< 1 hour old). Skipping refresh.')
-          console.log('Note: Mezo testnet Pyth contract rejects Hermes update bytes (network incompatibility).')
-          console.log('Using existing price which is still valid.')
           return // Exit early - price is fresh, no refresh needed
         } else if (ageSeconds < 0) {
           console.warn('⚠️ Warning: Price timestamp is in the future. This may indicate a clock sync issue.')
@@ -294,10 +267,7 @@ export function useTradingEngineRefreshMarkPrice() {
         console.warn('⚠️ No oracle price found. Attempting refresh (this may fail)...')
       }
       
-      console.log('Pre-flight checks passed. Proceeding with price refresh...')
-      
       // 1. Fetch Hermes update bytes
-      console.log('Fetching Pyth Hermes update bytes...')
       const updateBytes = await fetchPythLatestUpdateHex()
       
       if (!Array.isArray(updateBytes) || updateBytes.length === 0) {
@@ -305,7 +275,6 @@ export function useTradingEngineRefreshMarkPrice() {
       }
       
       // Validate and format update bytes
-      console.log('\n=== VALIDATING UPDATE BYTES FORMAT ===')
       const validatedBytes: `0x${string}`[] = []
       for (let i = 0; i < updateBytes.length; i++) {
         const byteStr = updateBytes[i]
@@ -324,35 +293,17 @@ export function useTradingEngineRefreshMarkPrice() {
           throw new Error(`Update byte at index ${i} is not valid hex: ${byteStr.substring(0, 20)}...`)
         }
         validatedBytes.push(formattedByte)
-        if (i === 0) {
-          console.log(`✓ First update byte validated: ${formattedByte.length} chars, starts with ${formattedByte.substring(0, 10)}...`)
-          // Check if it looks like Pyth format (should start with magic bytes)
-          if (formattedByte.length > 10) {
-            const magicBytes = formattedByte.substring(2, 10) // First 4 bytes after 0x
-            console.log(`  Magic bytes: ${magicBytes} (${magicBytes === '504e4155' ? 'PNAU ✓' : 'unknown format'})`)
-          }
-        }
       }
-      console.log(`✓ All ${validatedBytes.length} update bytes validated`)
       
       // 2. Estimate fee (use reasonable buffer, excess refunded by contract)
       // Try higher fee first if previous attempts failed
       let feeEstimate = parseEther('0.001') // 0.001 ETH buffer
       
-      console.log('\n=== PRICE REFRESH PREPARATION ===')
-      console.log('Update bytes count:', validatedBytes.length)
-      console.log('Fee estimate:', feeEstimate.toString(), `(${formatUnits(feeEstimate, 18)} ETH)`)
-      console.log('PythOracle address:', pythOracleAddress)
-      console.log('Current mark price:', markPrice ? `${formatUnits(markPrice, 18)} USD` : 'N/A')
-      if (oraclePriceBefore) {
-        console.log('Oracle price (before update):', `${formatUnits(oraclePriceBefore, 18)} USD`)
-      }
       if (markPrice && oraclePriceBefore) {
         const priceDiff = oraclePriceBefore > markPrice 
           ? oraclePriceBefore - markPrice 
           : markPrice - oraclePriceBefore
         const priceDiffPercent = Number((priceDiff * BigInt(10000)) / markPrice)
-        console.log('Price difference:', `${formatUnits(priceDiff, 18)} USD`, `(${priceDiffPercent / 100}%)`)
         if (maxOracleMoveBps && maxOracleMoveBps > BigInt(0) && priceDiffPercent > Number(maxOracleMoveBps)) {
           console.error('⚠️ WARNING: Price difference exceeds maxOracleMoveBps!')
           console.error(`Price diff: ${priceDiffPercent / 100}% > Max allowed: ${Number(maxOracleMoveBps) / 100}%`)
@@ -360,9 +311,7 @@ export function useTradingEngineRefreshMarkPrice() {
       }
 
       // 3. First try simulateContract to get better error information
-      console.log('\n=== SIMULATING TRANSACTION (GETTING REVERT REASON) ===')
       try {
-        console.log('Attempting transaction simulation...')
         if (!userAddress) {
           throw new Error('User address required for simulation')
         }
@@ -376,12 +325,6 @@ export function useTradingEngineRefreshMarkPrice() {
           functionName: 'refreshMarkPrice',
           args: [validatedBytes],
           value: feeEstimate,
-        })
-        
-        console.log('✓ Transaction simulation successful')
-        console.log('Simulation result:', {
-          request: simulation.request,
-          result: simulation.result,
         })
         
       } catch (simulateErr: any) {
@@ -483,7 +426,6 @@ export function useTradingEngineRefreshMarkPrice() {
       }
 
       // 4. Try to estimate gas (simulation succeeded, so this should work)
-      console.log('\n=== ESTIMATING GAS ===')
       let gasEstimate: bigint | undefined
       // Encode function data outside try block so it's accessible in catch block
       const encodedData = encodeFunctionData({
@@ -493,7 +435,6 @@ export function useTradingEngineRefreshMarkPrice() {
       })
       
       try {
-        console.log('Attempting gas estimation...')
         if (!userAddress) {
           console.warn('No user address available for gas estimation, skipping...')
           gasEstimate = undefined
@@ -504,7 +445,6 @@ export function useTradingEngineRefreshMarkPrice() {
             data: encodedData,
             value: feeEstimate,
           })
-          console.log('✓ Gas estimation successful:', gasEstimate?.toString(), 'gas units')
         }
       } catch (gasErr: any) {
         console.error('✗ Gas estimation failed:', gasErr?.message)
@@ -587,7 +527,6 @@ export function useTradingEngineRefreshMarkPrice() {
 
         // If gas estimation fails with insufficient fee, try higher fee
         if (gasErr?.message?.includes('insufficient') || gasErr?.shortMessage?.includes('insufficient')) {
-          console.log('Attempting with higher fee (0.01 ETH)...')
           feeEstimate = parseEther('0.01')
           // Re-encode with updated fee (though data doesn't change, this ensures scope)
           const retryEncodedData = encodeFunctionData({
@@ -606,7 +545,6 @@ export function useTradingEngineRefreshMarkPrice() {
               data: retryEncodedData,
               value: feeEstimate,
             })
-            console.log('✓ Gas estimation successful with higher fee:', gasEstimate?.toString())
           } catch (retryErr: any) {
             console.error('✗ Gas estimation still failed with higher fee:', retryErr?.message)
             
@@ -634,7 +572,6 @@ export function useTradingEngineRefreshMarkPrice() {
        }
        
        // 5. Call refreshMarkPrice with bytes and ETH for fee
-      console.log('\n=== EXECUTING TRANSACTION ===')
       try {
         const txHash = await writeContractAsync({
           address: tradingEngineAddress,
@@ -648,8 +585,6 @@ export function useTradingEngineRefreshMarkPrice() {
         if (publicClient) {
           await publicClient.waitForTransactionReceipt({ hash: txHash })
         }
-        
-        console.log('Price refresh successful')
       } catch (writeError: any) {
         console.error('\n=== REFRESH MARK PRICE WRITE ERROR ===')
         console.error('Error type:', typeof writeError)
@@ -684,7 +619,6 @@ export function useTradingEngineRefreshMarkPrice() {
         for (const potentialData of errorDataPaths) {
           if (potentialData && typeof potentialData === 'string' && potentialData.startsWith('0x')) {
             errorData = potentialData as `0x${string}`
-            console.log('Found error data at:', potentialData.substring(0, 20) + '...')
             break
           }
         }
@@ -693,13 +627,9 @@ export function useTradingEngineRefreshMarkPrice() {
         if (!errorData && writeError?.transaction?.data) {
           const txData = writeError.transaction.data
           // Check if it's an error response (starts with error selector)
-          if (typeof txData === 'string' && txData.startsWith('0x')) {
-            console.log('Checking transaction data for error:', txData.substring(0, 20) + '...')
-          }
         }
         
         if (errorData && errorData.startsWith('0x')) {
-          console.log('Attempting to decode error data:', errorData.substring(0, 20) + '...')
           try {
             decodedError = decodeErrorResult({
               abi: TradingEngineABI,
@@ -840,16 +770,6 @@ export function useTradingEngineOpenPosition() {
   
   const openPosition = async (isLong: boolean, marginAmount: bigint, leverage: bigint) => {
     try {
-      console.log('=== OPEN POSITION DEBUG START ===')
-      console.log('Opening position with params:', {
-        isLong,
-        marginAmount: marginAmount.toString(),
-        leverage: leverage.toString(),
-        marginAmountFormatted: formatUnits(marginAmount, 8),
-        tradingEngineAddress,
-        userAddress
-      })
-      
       // Pre-flight validations
       if (!userAddress) {
         throw new Error('No user address found. Please connect your wallet.')
@@ -868,17 +788,46 @@ export function useTradingEngineOpenPosition() {
         throw new Error('Contract is paused. Trading is temporarily disabled.')
       }
       
-      // Check if user already has a position
-      if ((position as any)?.exists) {
+      // IMPORTANT: Read position directly from contract to bypass stale cache
+      // This ensures we have the latest position state, especially after closing a position
+      let currentPosition: any = null
+      if (publicClient && userAddress) {
+        try {
+          currentPosition = await publicClient.readContract({
+            address: tradingEngineAddress,
+            abi: TradingEngineABI,
+            functionName: 'getPosition',
+            args: [userAddress],
+          }) as any
+        } catch (readErr) {
+          console.warn('Failed to read position from contract, using cached value:', readErr)
+          // Fallback to cached value if read fails
+          currentPosition = position
+        }
+      } else {
+        // Fallback to cached value if publicClient not available
+        currentPosition = position
+      }
+      
+      // Check if user already has a position (using fresh data from contract)
+      // Check both exists flag AND size/margin to handle edge cases
+      const hasActivePosition = currentPosition?.exists || 
+        (currentPosition?.size && currentPosition.size > BigInt(0)) ||
+        (currentPosition?.margin && currentPosition.margin > BigInt(0))
+      
+      if (hasActivePosition) {
+        console.error('Position check failed - active position detected:', {
+          exists: currentPosition?.exists,
+          size: currentPosition?.size?.toString(),
+          margin: currentPosition?.margin?.toString(),
+        })
         throw new Error('You already have an open position. Close it before opening a new one.')
       }
       
       // REQUIRED: Refresh mark price from Pyth oracle before opening position
       // This ensures the on-chain price is accurate and verified cryptographically
-      console.log('Refreshing mark price from Pyth oracle...')
       try {
         await refreshMarkPrice()
-        console.log('Price refresh successful, proceeding with position opening...')
       } catch (refreshError: any) {
         console.error('Price refresh failed, blocking position opening:', refreshError)
         // NO FALLBACK: Block trade if refresh fails
@@ -886,7 +835,6 @@ export function useTradingEngineOpenPosition() {
       }
       
       // Simulate the contract call first to catch errors early
-      console.log('Simulating contract call...')
       try {
         if (publicClient) {
           await publicClient.simulateContract({
@@ -896,7 +844,6 @@ export function useTradingEngineOpenPosition() {
             args: [isLong, marginAmount, leverage],
             account: userAddress,
           })
-          console.log('Simulation successful')
         }
       } catch (simulateError: any) {
         console.error('Contract simulation failed:', simulateError)
@@ -913,10 +860,8 @@ export function useTradingEngineOpenPosition() {
                 data: simulateError.cause.data as `0x${string}`,
               })
               errorMessage = decoded.errorName || errorMessage
-              console.log('Decoded error:', decoded)
             }
           } catch (decodeErr) {
-            console.log('Could not decode error:', decodeErr)
           }
         }
         
@@ -945,7 +890,6 @@ export function useTradingEngineOpenPosition() {
       }
       
       // Open the position - entryPrice will use the freshly updated on-chain markPrice
-      console.log('Executing openPosition transaction...')
       try {
         await writeContractAsync({
           address: tradingEngineAddress as `0x${string}`,
@@ -953,9 +897,6 @@ export function useTradingEngineOpenPosition() {
           functionName: 'openPosition',
           args: [isLong, marginAmount, leverage],
         })
-        
-        console.log('Transaction submitted')
-        console.log('=== OPEN POSITION DEBUG END ===')
         // Note: hash is tracked via useWriteContract and returned from the hook
       } catch (writeError: any) {
         console.error('=== WRITE CONTRACT ERROR ===')
@@ -982,14 +923,12 @@ export function useTradingEngineOpenPosition() {
               abi: TradingEngineABI,
               data: errorData,
             })
-            console.log('Decoded error from writeContract:', decodedError)
             
             // Re-throw with decoded information
             const errorName = decodedError.errorName || 'UnknownError'
             const argsStr = decodedError.args ? ` Args: ${JSON.stringify(decodedError.args)}` : ''
             throw new Error(`Contract error: ${errorName}${argsStr}`)
           } catch (decodeErr) {
-            console.log('Could not decode writeContract error:', decodeErr)
             // Continue to throw original error
           }
         }
@@ -1069,14 +1008,15 @@ export function useTradingEngineOpenPosition() {
 }
 
 export function useTradingEngineClosePosition() {
-  console.log('useTradingEngineClosePosition')
   const { address: userAddress } = useAccount()
-  const { writeContract, data: hash, isPending, error } = useWriteContract()
+  const { writeContractAsync, data: hash, isPending, error } = useWriteContract()
+  const publicClient = usePublicClient()
+  const queryClient = useQueryClient()
   
   const { refreshMarkPrice } = useTradingEngineRefreshMarkPrice()
   
   // Check if user has a position before allowing close
-  const { data: position, isLoading: positionLoading, error: positionError } = useReadContract({
+  const { data: position, isLoading: positionLoading, error: positionError, refetch: refetchPosition } = useReadContract({
     address: tradingEngineAddress,
     abi: TradingEngineABI,
     functionName: 'getPosition',
@@ -1107,41 +1047,8 @@ export function useTradingEngineClosePosition() {
     functionName: 'tradingEngine',
   })
   
-  console.log('writeContract', writeContract)
-  console.log('isPending', isPending)
-  console.log('error', error)
-  console.log('userAddress', userAddress)
-  console.log('Position check:', {
-    position: position,
-    positionLoading,
-    positionError,
-    positionExists: (position as any)?.exists
-  })
-  console.log('Paused check:', {
-    isPaused,
-    pausedLoading,
-    pausedError
-  })
-  console.log('Contract References:', {
-    vaultTradingEngine,
-    vaultRefLoading,
-    vaultRefError,
-    fundingTradingEngine,
-    fundingRefLoading,
-    fundingRefError,
-    expectedTradingEngine: tradingEngineAddress,
-    vaultRefCorrect: vaultTradingEngine === tradingEngineAddress,
-    fundingRefCorrect: fundingTradingEngine === tradingEngineAddress
-  })
-  
   const closePosition = async () => {
     try {
-      console.log('=== CLOSE POSITION DEBUG START ===')
-      console.log('User Address:', userAddress)
-      console.log('TradingEngine Address:', tradingEngineAddress)
-      console.log('Vault Address:', vaultAddress)
-      console.log('FundingRate Address:', fundingRateAddress)
-      
       if (!userAddress) {
         throw new Error('No user address found')
       }
@@ -1164,43 +1071,87 @@ export function useTradingEngineClosePosition() {
       if (fundingTradingEngine !== tradingEngineAddress) {
         throw new Error(`FundingRate contract reference incorrect. Expected: ${tradingEngineAddress}, Got: ${fundingTradingEngine}`)
       }
-      
-      console.log('Position details:', {
-        exists: (position as any).exists,
-        isLong: (position as any).isLong,
-        entryPrice: (position as any).entryPrice?.toString(),
-        size: (position as any).size?.toString(),
-        margin: (position as any).margin?.toString(),
-        leverage: (position as any).leverage?.toString()
-      })
-      
-      console.log('Contract references validated:', {
-        vaultTradingEngine,
-        fundingTradingEngine,
-        expectedTradingEngine: tradingEngineAddress
-      })
-      
-      console.log('=== CLOSE POSITION DEBUG END ===')
 
       // REQUIRED: Refresh mark price from Pyth oracle before closing position
       // This ensures the exit price is accurate and verified cryptographically
-      console.log('Refreshing mark price from Pyth oracle...')
       try {
         await refreshMarkPrice()
-        console.log('Price refresh successful, proceeding with position closing...')
       } catch (refreshError: any) {
         console.error('Price refresh failed, blocking position closing:', refreshError)
         // NO FALLBACK: Block close if refresh fails
         throw new Error(`Cannot close position: Price refresh failed. ${refreshError?.message || 'Oracle update failed. Please try again.'}`)
       }
 
-      // Now try the actual closePosition call
-      console.log('Attempting closePosition call...')
-      await writeContract({
+      // Now try the actual closePosition call - use writeContractAsync to await the hash
+      const txHash = await writeContractAsync({
         address: tradingEngineAddress,
         abi: TradingEngineABI,
         functionName: 'closePosition',
       })
+      
+      // Wait for transaction confirmation
+      if (publicClient) {
+        await publicClient.waitForTransactionReceipt({ hash: txHash })
+        
+        // Add a small delay to ensure on-chain state is fully updated
+        await new Promise(resolve => setTimeout(resolve, 500))
+        
+        // Aggressively clear and refetch all position queries
+        // Wagmi v2 query keys: ['readContract', { address, abi, functionName, args, ... }, ...]
+        
+        // Helper function to match position queries
+        const matchPositionQuery = (query: any): boolean => {
+          const queryKey = query.queryKey as any[]
+          if (!Array.isArray(queryKey) || queryKey.length === 0) return false
+          if (queryKey[0] !== 'readContract') return false
+          
+          const config = queryKey[1]
+          if (!config || typeof config !== 'object') return false
+          
+          // Match by address and functionName (case-insensitive for address)
+          const addressMatch = config.address?.toLowerCase() === tradingEngineAddress.toLowerCase()
+          const functionMatch = config.functionName === 'getPosition'
+          
+          return addressMatch && functionMatch
+        }
+        
+        // Strategy 1: Remove all matching queries from cache
+        await queryClient.removeQueries({
+          predicate: matchPositionQuery,
+        })
+        
+        // Strategy 2: Invalidate all matching queries
+        await queryClient.invalidateQueries({
+          predicate: matchPositionQuery,
+        })
+        
+        // Strategy 3: Force refetch all matching queries
+        await queryClient.refetchQueries({
+          predicate: matchPositionQuery,
+        })
+        
+        // Also refetch the local position query for immediate update
+        await refetchPosition()
+        
+        // Verify the position is actually closed by reading directly from contract
+        if (userAddress) {
+          const verifyPosition = await publicClient.readContract({
+            address: tradingEngineAddress,
+            abi: TradingEngineABI,
+            functionName: 'getPosition',
+            args: [userAddress],
+          }) as any
+          
+          if (verifyPosition?.exists) {
+            console.warn('⚠️ WARNING: Position still exists on-chain after close transaction!')
+            // Wait a bit longer and retry
+            await new Promise(resolve => setTimeout(resolve, 1000))
+            await queryClient.refetchQueries({
+              predicate: matchPositionQuery,
+            })
+          }
+        }
+      }
       
     } catch (err: any) {
       console.error('=== CLOSE POSITION ERROR ===')

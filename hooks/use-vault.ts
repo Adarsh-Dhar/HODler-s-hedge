@@ -18,18 +18,6 @@ export function useVaultBalance(userAddress?: `0x${string}`) {
     },
   })
 
-  // Debug logging
-  console.log('Vault balance query result:', {
-    userAddress,
-    vaultAddress,
-    balance: result.data?.toString() || 'undefined',
-    balanceFormatted: result.data ? Number(result.data) / 1e8 : 'undefined',
-    isLoading: result.isLoading,
-    error: result.error,
-    isError: result.isError,
-    isSuccess: result.isSuccess
-  })
-
   return result
 }
 
@@ -38,12 +26,6 @@ export function useVaultDeposit() {
   
   const deposit = (amount: bigint) => {
     try {
-      console.log('Attempting deposit:', {
-        address: vaultAddress,
-        amount: amount.toString(),
-        amountFormatted: Number(amount) / 1e8
-      })
-      
       writeContract({
         address: vaultAddress,
         abi: VaultABI,
@@ -102,16 +84,6 @@ export function useVaultTradingEngine() {
     functionName: 'tradingEngine',
   })
 
-  // Debug logging
-  console.log('Vault trading engine query result:', {
-    vaultAddress,
-    tradingEngine: result.data?.toString() || 'undefined',
-    isLoading: result.isLoading,
-    error: result.error,
-    isError: result.isError,
-    isSuccess: result.isSuccess
-  })
-
   return result
 }
 
@@ -122,16 +94,6 @@ export function useVaultTBTC() {
     functionName: 'TBTC',
   })
 
-  // Debug logging
-  console.log('Vault TBTC query result:', {
-    vaultAddress,
-    tbtc: result.data?.toString() || 'undefined',
-    isLoading: result.isLoading,
-    error: result.error,
-    isError: result.isError,
-    isSuccess: result.isSuccess
-  })
-
   return result
 }
 
@@ -140,16 +102,6 @@ export function useVaultOwner() {
     address: vaultAddress,
     abi: VaultABI,
     functionName: 'owner',
-  })
-
-  // Debug logging
-  console.log('Vault owner query result:', {
-    vaultAddress,
-    owner: result.data?.toString() || 'undefined',
-    isLoading: result.isLoading,
-    error: result.error,
-    isError: result.isError,
-    isSuccess: result.isSuccess
   })
 
   return result
@@ -240,17 +192,6 @@ export function useTBTCAllowance(owner?: `0x${string}`, spender?: `0x${string}`)
     },
   })
 
-  // Debug logging
-  console.log('Allowance query result:', {
-    owner,
-    spender,
-    allowance: result.data?.toString() || 'undefined',
-    isLoading: result.isLoading,
-    error: result.error,
-    isError: result.isError,
-    isSuccess: result.isSuccess
-  })
-
   return result
 }
 
@@ -259,13 +200,6 @@ export function useTBTCApprove() {
   
   const approve = (spender: `0x${string}`, amount: bigint) => {
     try {
-      console.log('Attempting approve:', {
-        tokenAddress: tBTCAddress,
-        spender,
-        amount: amount.toString(),
-        amountFormatted: Number(amount) / 1e8
-      })
-      
       writeContract({
         address: tBTCAddress,
         abi: ERC20ABI,

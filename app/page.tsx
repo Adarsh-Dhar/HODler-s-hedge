@@ -161,38 +161,25 @@ export default function Home() {
   
   const needsContractSetup = vaultTradingEngine !== tradingEngineAddress || fundingTradingEngine !== tradingEngineAddress
 
-  // Debug logging for contract state
-  useEffect(() => {
-    console.log('Contract state:', {
-      isPaused,
-      userAddress,
-      positionExists: (position as any)?.exists,
-      markPrice: markPrice?.toString(),
-      tradingEngineAddress: '0xa1637A1D40f083E380a89a29f9D8Cf4d060e8303'
-    })
-  }, [isPaused, userAddress, position, markPrice])
-
   // Refetch vault balance after successful deposit
   useEffect(() => {
     if (isDepositConfirmed) {
-      console.log('Deposit confirmed, refetching vault balance...')
-      console.log('Current vault balance before refetch:', vaultBalance?.toString())
-      refetchVaultBalance().then((result) => {
-        console.log('Vault balance after refetch:', result.data?.toString())
-      })
+      refetchVaultBalance()
     }
-  }, [isDepositConfirmed, refetchVaultBalance, vaultBalance])
+  }, [isDepositConfirmed, refetchVaultBalance])
 
   // Refetch position data after successful open or close
   useEffect(() => {
     if (isOpenPositionConfirmed || isClosePositionConfirmed) {
-      console.log('Position transaction confirmed, refetching position data...')
-      console.log('Current position before refetch:', position)
       if (refetchPosition) {
-        refetchPosition().then((result) => {
-          console.log('Position after refetch:', result.data)
-          console.log('Entry price:', result.data ? Number((result.data as any)?.entryPrice) / 1e18 : 'N/A')
-        })
+        // Add a small delay to ensure on-chain state is updated
+        const timeoutId = setTimeout(() => {
+          refetchPosition().catch((err) => {
+            console.error('Error refetching position:', err)
+          })
+        }, 300) // Small delay to ensure state propagation
+        
+        return () => clearTimeout(timeoutId)
       }
     }
   }, [isOpenPositionConfirmed, isClosePositionConfirmed, refetchPosition])

@@ -18,15 +18,21 @@ function getTradingEngineAddress(): `0x${string}` {
   try {
     const addressFile = join(__dirname, '../../lib/address.ts')
     const content = readFileSync(addressFile, 'utf-8')
-    const match = content.match(/export const tradingEngineAddress = ["']([^"']+)["']/)
+    // Try both single and double quotes, and handle various whitespace
+    const match = content.match(/export const tradingEngineAddress\s*=\s*["']([^"']+)["']/)
     if (match && match[1]) {
-      return match[1] as `0x${string}`
+      const address = match[1] as `0x${string}`
+      console.log(`✓ Loaded TradingEngine address from lib/address.ts: ${address}`)
+      return address
+    } else {
+      console.warn('⚠️ Could not parse tradingEngineAddress from lib/address.ts, using fallback')
     }
-  } catch (error) {
-    console.warn('Could not read address from lib/address.ts, using fallback')
+  } catch (error: any) {
+    console.warn(`⚠️ Could not read address from lib/address.ts: ${error?.message || error}`)
+    console.warn('   Using fallback address. Set TRADING_ENGINE_ADDRESS env var to override.')
   }
-  // Fallback to hardcoded address
-  return '0xc1e04Adfa33cb46D3A9852188d97dE3C2FFF236F' as const
+  // Fallback to current correct address
+  return '0x304B0E3DFC3701F5907dcb955E93a9D7c8b78b7F' as const
 }
 
 const DEFAULT_TRADING_ENGINE_ADDRESS = getTradingEngineAddress()

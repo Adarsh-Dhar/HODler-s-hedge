@@ -103,14 +103,21 @@ export default function TradePanel({
     tradeType === "long" ? price * (1 - (1 / leverage) * 0.95) : price * (1 + (1 / leverage) * 0.95)
   const calculatedTradingFee = positionSize * tradingFeeRate
 
-  const isValid = margin > 0 && margin <= availableBalance && leverage >= 1 && leverage <= maxLeverageValue && !currentPosition?.exists
+  // Check if position is truly active (not just exists flag, but also has size/margin)
+  // This handles edge cases where position might have exists=true but size/margin=0
+  // After closing, the position might have exists=false but still have cached data
+  const currentPositionSize = currentPosition?.size ? Number(currentPosition.size) / 1e18 : 0
+  const currentPositionMargin = currentPosition?.margin ? Number(currentPosition.margin) / 1e18 : 0
+  const hasActivePosition = currentPosition?.exists && currentPositionSize > 0 && currentPositionMargin > 0
+  
+  const isValid = margin > 0 && margin <= availableBalance && leverage >= 1 && leverage <= maxLeverageValue && !hasActivePosition
   
   // Additional validation for better error messages
   const validationErrors = []
   if (margin <= 0) validationErrors.push("Margin must be greater than 0")
   if (margin > availableBalance) validationErrors.push(`Insufficient vault balance. Available: ${availableBalance.toFixed(4)} BTC`)
   if (leverage < 1 || leverage > maxLeverageValue) validationErrors.push(`Leverage must be between 1 and ${maxLeverageValue}`)
-  if (currentPosition?.exists) validationErrors.push(`You already have an open ${currentPosition.isLong ? 'long' : 'short'} position. Close it before opening a new one.`)
+  if (hasActivePosition) validationErrors.push(`You already have an open ${currentPosition.isLong ? 'long' : 'short'} position. Close it before opening a new one.`)
   
   const handleOpenPosition = async () => {
     if (!isValid) return
@@ -118,21 +125,6 @@ export default function TradePanel({
     try {
       const marginAmount = BigInt(Math.floor(margin * 1e8)) // Convert to tBTC wei (8 decimals)
       const leverageBigInt = BigInt(leverage)
-      
-      console.log('Opening position:', {
-        tradeType,
-        marginAmount: marginAmount.toString(),
-        leverage: leverageBigInt.toString(),
-        isValid,
-        availableBalance,
-        margin,
-        vaultBalance: vaultBalance?.toString(),
-        userAddress: 'Check console for user address'
-      })
-      
-      // Check if user already has a position
-      console.log('⚠️  IMPORTANT: If you already have an open position, you must close it before opening a new one!')
-      console.log('Current position:', currentPosition)
       
       await onOpenPosition(tradeType === "long", marginAmount, leverageBigInt)
     } catch (error) {
@@ -216,7 +208,6 @@ export default function TradePanel({
                     <p className="text-muted-foreground text-xs uppercase tracking-wide">Vault Balance</p>
                     <button
                       onClick={() => {
-                        console.log('Manual vault balance refresh requested')
                         window.location.reload()
                       }}
                       className="text-primary text-xs hover:underline"
@@ -239,7 +230,6 @@ export default function TradePanel({
                   <p className="text-muted-foreground text-xs uppercase tracking-wide">Deposit Amount</p>
                   <button
                     onClick={() => {
-                      console.log('Max button clicked, setting amount to:', walletBalanceFormatted)
                       setDepositAmount(walletBalanceFormatted)
                     }}
                     className="text-primary text-xs hover:underline"
@@ -256,7 +246,6 @@ export default function TradePanel({
                     value={depositAmount}
                     onChange={(e) => {
                       const newAmount = Math.max(0, Number.parseFloat(e.target.value) || 0)
-                      console.log('Input changed:', e.target.value, '-> parsed:', newAmount)
                       setDepositAmount(newAmount)
                     }}
                     placeholder="Enter BTC amount"
@@ -299,21 +288,10 @@ export default function TradePanel({
                     // Store the deposit amount before transaction
                     setLastDepositedAmount(depositAmount)
                     
-                    console.log('Transaction details:', {
-                      depositAmount,
-                      amount: amount.toString(),
-                      amountFormatted: Number(amount) / 1e8,
-                      walletBalance: walletBalance?.toString(),
-                      allowance: allowance?.toString(),
-                      needsApproval: !allowance || allowance < amount
-                    })
-                    
                     // Always try approval first if allowance is 0 or undefined
                     if (!allowance || allowance === BigInt(0) || allowance < amount) {
-                      console.log('Calling approve with amount:', amount.toString())
                       onApprove(amount)
                     } else {
-                      console.log('Calling deposit with amount:', amount.toString())
                       onDeposit(amount)
                     }
                   }}
@@ -433,7 +411,6 @@ export default function TradePanel({
                   <p className="text-muted-foreground text-xs uppercase tracking-wide">Withdraw Amount</p>
                   <button
                     onClick={() => {
-                      console.log('Max withdraw button clicked, setting amount to:', availableBalance)
                       setWithdrawAmount(availableBalance)
                     }}
                     className="text-primary text-xs hover:underline"
@@ -450,7 +427,6 @@ export default function TradePanel({
                     value={withdrawAmount}
                     onChange={(e) => {
                       const newAmount = Math.max(0, Number.parseFloat(e.target.value) || 0)
-                      console.log('Withdraw input changed:', e.target.value, '-> parsed:', newAmount)
                       setWithdrawAmount(newAmount)
                     }}
                     placeholder="Enter BTC amount to withdraw"
@@ -498,15 +474,6 @@ export default function TradePanel({
                     // Store the withdraw amount before transaction
                     setLastWithdrawnAmount(withdrawAmount)
                     
-                    console.log('Withdraw transaction details:', {
-                      withdrawAmount,
-                      amount: amount.toString(),
-                      amountFormatted: Number(amount) / 1e8,
-                      vaultBalance: vaultBalance?.toString(),
-                      availableBalance
-                    })
-                    
-                    console.log('Calling withdraw with amount:', amount.toString())
                     onWithdraw(amount)
                   }}
                   disabled={

@@ -76,17 +76,6 @@ export default function PositionPanel({
     ? Number(entryPriceRaw) / 1e18 
     : (position?.exists ? price : 42000) // If position exists but entryPrice is 0, use current price as fallback
   
-  // Debug logging for entry price
-  if (position?.exists) {
-    console.log('PositionPanel - Entry Price Debug:', {
-      exists: position.exists,
-      entryPriceRaw: entryPriceRaw.toString(),
-      entryPriceFormatted: entryPrice,
-      entryPriceType: typeof position.entryPrice,
-      positionFull: position
-    })
-  }
-  
   const markPrice = price
   const margin = position?.exists ? Number(position.margin) / 1e18 : 0
   const liquidationPriceValue = liquidationPrice ? Number(liquidationPrice) / 1e18 : 39900

@@ -153,6 +153,18 @@ export class PositionTracker {
 
       console.log(`📊 Backfilled ${this.activePositions.size} active positions`)
       console.log(`   Opened: ${opened.size}, Closed: ${closed.size}, Liquidated: ${liquidated.size}`)
+      
+      // Show active positions for debugging
+      if (this.activePositions.size > 0) {
+        console.log(`   Active position addresses:`)
+        Array.from(this.activePositions).forEach((addr) => {
+          console.log(`     - ${addr}`)
+        })
+      } else {
+        console.log(`   ⚠️ No active positions found in the last ${config.backfillBlockRange} blocks`)
+        console.log(`   ℹ️  If you have a position, it may have been opened more than ${config.backfillBlockRange} blocks ago`)
+        console.log(`   ℹ️  The bot will detect new positions via event listeners`)
+      }
     } catch (error) {
       console.error('❌ Error backfilling positions:', error)
       throw error

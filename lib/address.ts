@@ -4,12 +4,12 @@
 //   FundingRate: 0xfb5FeA6e31b5f5093519A7CCEB6D28d45c7B5B01
 //   Mock tBTC: 0x56C4C6F233565a13690bC9E97163Ae812892Cf03
 //   Initial Mark Price: $42,000
-export const vaultAddress = "0x75314cE1587DE958DaeD679e240fb993558dAfb8";
-export const tradingEngineAddress = "0x304B0E3DFC3701F5907dcb955E93a9D7c8b78b7F";
-export const fundingRateAddress = "0x3e8c8C1A25Ad05d4a673Ce04151473A9B8C61eBF";
-export const tBTCAddress = "0x7c77A78813F8785Aaaf082fDc852A968FF4FFFDe";
+export const vaultAddress = "0xA8d667d6Fd293d48F85cCeE2C55684AC48A4635C";
+export const tradingEngineAddress = "0xfef5495F399E11254083F9E5e851a244f58c2c1D";
+export const fundingRateAddress = "0xb23e4B7577f9903812fe48Bbbc6B71E6BE9732aA";
+export const tBTCAddress = "0x677f172E501FD075285d06B2cBA98A7F643000D6";
 export const initialMarkPrice = 42000e18;
-export const insuranceFundAddress = "0x5D3DD677777E662431075D4539B7246033B6F423";
+export const insuranceFundAddress = "0xBBCB580788d9df145f63B6F62488cAdfB169AC3E";
 
 // Pyth (Mezo testnet)
 export const PYTH_ADDRESS_MEZO_TESTNET = "0x2880aB155794e7179c9eE2e38200202908C17B43";

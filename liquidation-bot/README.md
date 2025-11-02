@@ -37,7 +37,7 @@ Automated liquidation bot for Hodlers Hedge TradingEngine that monitors all posi
    
    # Optional overrides (defaults shown)
    RPC_URL=https://rpc.test.mezo.org
-   TRADING_ENGINE_ADDRESS=0xc1e04Adfa33cb46D3A9852188d97dE3C2FFF236F
+   TRADING_ENGINE_ADDRESS=0x304B0E3DFC3701F5907dcb955E93a9D7c8b78b7F
    MONITOR_INTERVAL_MS=15000
    CHAIN_ID=31611
    MAX_GAS_PRICE_GWEI=0

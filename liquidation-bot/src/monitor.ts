@@ -10,6 +10,7 @@ import type { BotConfig } from './types.js'
 export class MonitorService {
   private intervalId: NodeJS.Timeout | null = null
   private isRunning = false
+  private lastLogTime: number | null = null
 
   constructor(
     private publicClient: PublicClient,
@@ -59,10 +60,17 @@ export class MonitorService {
     const activePositions = this.positionTracker.getActivePositions()
     
     if (activePositions.length === 0) {
+      // Log periodically so we know the bot is running but just no positions
+      const now = Date.now()
+      if (!this.lastLogTime || now - this.lastLogTime > 60000) {
+        // Log every minute when no positions
+        console.log('👀 No active positions to monitor')
+        this.lastLogTime = now
+      }
       return // No positions to check
     }
 
-    console.log(`🔍 Checking ${activePositions.length} positions for liquidation...`)
+    console.log(`🔍 Checking ${activePositions.length} position(s) for liquidation...`)
 
     const liquidatablePositions: string[] = []
 
