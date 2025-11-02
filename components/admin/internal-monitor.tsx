@@ -37,9 +37,9 @@ export default function InternalMonitor() {
 
   const getEventColor = (event: any) => {
     if ('pnl' in event) {
-      return Number(event.pnl) >= 0 ? "text-success" : "text-destructive"
+      return Number(event.pnl) >= 0 ? "text-primary" : "text-destructive"
     }
-    return "text-blue-600"
+    return "text-primary"
   }
 
   const exportToCSV = () => {
@@ -77,15 +77,15 @@ export default function InternalMonitor() {
           </div>
           <div className="bg-muted rounded p-4">
             <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Total Locked</p>
-            <p className="text-blue-600 font-semibold text-lg">{formatAmount(stats.totalLocked)} BTC</p>
+            <p className="text-primary font-semibold text-lg">{formatAmount(stats.totalLocked)} BTC</p>
           </div>
           <div className="bg-muted rounded p-4">
             <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Total Unlocked</p>
-            <p className="text-green-600 font-semibold text-lg">{formatAmount(stats.totalUnlocked)} BTC</p>
+            <p className="text-primary font-semibold text-lg">{formatAmount(stats.totalUnlocked)} BTC</p>
           </div>
           <div className="bg-muted rounded p-4">
             <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Total PnL</p>
-            <p className={`font-semibold text-lg ${Number(stats.totalPnL) >= 0 ? "text-success" : "text-destructive"}`}>
+            <p className={`font-semibold text-lg ${Number(stats.totalPnL) >= 0 ? "text-primary" : "text-destructive"}`}>
               {Number(stats.totalPnL) >= 0 ? "+" : ""}{formatAmount(stats.totalPnL)} BTC
             </p>
           </div>

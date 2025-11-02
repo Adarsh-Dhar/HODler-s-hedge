@@ -23,15 +23,13 @@ import {
   useTradingEngineOraclePrice,
   useContractSetup,
   useVaultBalance,
-  useVaultDeposit,
+  useVaultDepositWithApproval,
   useVaultWithdraw,
   useVaultOwner,
   useVaultTradingEngine,
   useVaultTBTC,
   useVaultInfo,
   useTBTCBalance,
-  useTBTCAllowance,
-  useTBTCApprove,
   useFundingRate,
   useFundingRateNextTime,
   useFundingRateIsDue,
@@ -66,7 +64,6 @@ export default function Home() {
   const { data: vaultTradingEngine } = useVaultTradingEngine()
   const { data: vaultTBTC } = useVaultTBTC()
   const { data: walletBalance, error: walletBalanceError, isLoading: walletBalanceLoading } = useTBTCBalance(userAddress)
-  const { data: allowance } = useTBTCAllowance(userAddress, vaultAddress as `0x${string}`)
   const { data: fundingRate } = useFundingRate()
   const { data: nextFundingTime } = useFundingRateNextTime()
   const { data: isFundingDue } = useFundingRateIsDue()
@@ -81,9 +78,8 @@ export default function Home() {
   const { closePosition, isPending: isClosing, error: closePositionError, isConfirmed: isClosePositionConfirmed, hash: closePositionHash } = useTradingEngineClosePosition()
   const { liquidate, isPending: isLiquidating, error: liquidateError } = useTradingEngineLiquidate()
   const { setupAllReferences, isPending: isSettingUp, error: setupError } = useContractSetup()
-  const { deposit, isPending: isDepositing, error: depositError, isConfirmed: isDepositConfirmed, hash: depositHash } = useVaultDeposit()
+  const { depositWithApproval, isApproving, isDepositing, error: depositError, isConfirmed: isDepositConfirmed, depositHash } = useVaultDepositWithApproval()
   const { withdraw, isPending: isWithdrawing, error: withdrawError, isConfirmed: isWithdrawConfirmed, hash: withdrawHash } = useVaultWithdraw()
-  const { approve, isPending: isApproving, error: approveError, isConfirmed: isApproveConfirmed } = useTBTCApprove()
   
   // Fetch real-time BTC price from API (same as chart panel)
   const { data: btcPriceData } = useBTCPrice({ refreshInterval: 30000 })
@@ -187,24 +183,55 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Header 
-        fundingRate={fundingRate as bigint}
-        nextFundingTime={nextFundingTime as bigint}
-        isFundingDue={isFundingDue as boolean}
-        priceChange={priceChange}
-      />
+      <Header />
 
       <main className="p-4 md:p-6">
+        {/* Market Stats */}
+        <div className="mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-card border-2 border-border rounded-lg p-4">
+              <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Market</p>
+              <p className="text-foreground font-bold text-lg">BTC/MUSD</p>
+            </div>
+            <div className="bg-card border-2 border-border rounded-lg p-4">
+              <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">24h Change</p>
+              {priceChange !== undefined ? (
+                <p className={`font-bold text-lg ${priceChange >= 0 ? "text-primary" : "text-destructive"}`}>
+                  {priceChange >= 0 ? "+" : ""}
+                  {priceChange.toFixed(2)}%
+                </p>
+              ) : (
+                <p className="font-bold text-lg text-muted-foreground">N/A</p>
+              )}
+            </div>
+            <div className="bg-card border-2 border-border rounded-lg p-4">
+              <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Funding Rate</p>
+              <p className={`font-bold text-lg ${isFundingDue ? "text-destructive" : "text-foreground"}`}>
+                {fundingRate ? (Number(fundingRate) / 1e18 * 100).toFixed(4) : "0.0000"}%
+              </p>
+              {(isFundingDue as boolean) === true && (
+                <p className="text-destructive text-xs mt-1">Due Now</p>
+              )}
+            </div>
+            <div className="bg-card border-2 border-border rounded-lg p-4">
+              <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">24h Volume</p>
+              <p className="text-foreground font-bold text-lg">
+                {btcPriceData?.volume_24h ? `$${(btcPriceData.volume_24h / 1e9).toFixed(1)}B` : "$2.4B"}
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* Contract Setup Alert */}
         {needsContractSetup && (
-          <div className="mb-6 p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+          <div className="mb-6 p-4 bg-primary/10 border border-primary/20 rounded-lg">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-yellow-600 font-semibold mb-1">⚠️ Contract Setup Required</h3>
-                <p className="text-yellow-600 text-sm">
+                <h3 className="text-primary font-semibold mb-1">⚠️ Contract Setup Required</h3>
+                <p className="text-primary text-sm">
                   The contract references are not set up correctly. This is why closing positions fails.
                 </p>
-                <p className="text-yellow-600 text-xs mt-1">
+                <p className="text-primary text-xs mt-1">
                   Vault: {vaultTradingEngine === tradingEngineAddress ? '✅' : '❌'} | 
                   FundingRate: {fundingTradingEngine === tradingEngineAddress ? '✅' : '❌'}
                 </p>
@@ -212,7 +239,7 @@ export default function Home() {
               <button
                 onClick={setupAllReferences}
                 disabled={isSettingUp}
-                className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 disabled:bg-yellow-400 text-white rounded font-semibold text-sm"
+                className="px-4 py-2 bg-primary hover:bg-primary/90 disabled:bg-primary/50 text-background rounded font-semibold text-sm"
               >
                 {isSettingUp ? "Setting up..." : "Fix Contract References"}
               </button>
@@ -252,17 +279,13 @@ export default function Home() {
               openPositionHash={openPositionHash}
               currentPosition={position as any}
               walletBalance={walletBalance as bigint}
-              allowance={allowance as bigint}
-              onDeposit={deposit}
-              onApprove={(amount) => approve(vaultAddress as `0x${string}`, amount)}
+              onDepositWithApproval={depositWithApproval}
               isDepositing={isDepositing}
               isApproving={isApproving}
               walletBalanceError={walletBalanceError || undefined}
               walletBalanceLoading={walletBalanceLoading}
               depositError={depositError || undefined}
-              approveError={approveError || undefined}
               isDepositConfirmed={isDepositConfirmed}
-              isApproveConfirmed={isApproveConfirmed}
               depositHash={depositHash}
               onWithdraw={withdraw}
               isWithdrawing={isWithdrawing}

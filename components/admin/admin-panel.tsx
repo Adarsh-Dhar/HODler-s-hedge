@@ -66,8 +66,8 @@ export default function AdminPanel({ className }: AdminPanelProps) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="w-8 h-8 bg-orange-500 rounded-full mx-auto mb-4"></div>
-          <p className="text-orange-600 font-semibold mb-2">Access Denied</p>
+          <div className="w-8 h-8 bg-primary rounded-full mx-auto mb-4"></div>
+          <p className="text-primary font-semibold mb-2">Access Denied</p>
           <p className="text-muted-foreground text-sm mb-4">Only the vault owner can access the admin panel</p>
           <div className="bg-muted rounded p-4 text-left max-w-md mx-auto">
             <p className="text-sm font-semibold mb-2">Current Owner:</p>
@@ -91,8 +91,8 @@ export default function AdminPanel({ className }: AdminPanelProps) {
               <p className="text-muted-foreground text-sm">Vault administration and monitoring</p>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-success rounded-full"></div>
-              <span className="text-success text-sm font-semibold">Owner Access</span>
+              <div className="w-2 h-2 bg-primary rounded-full"></div>
+              <span className="text-primary text-sm font-semibold">Owner Access</span>
             </div>
           </div>
         </div>
@@ -147,7 +147,7 @@ export default function AdminPanel({ className }: AdminPanelProps) {
                   </div>
                   <div className="bg-muted rounded p-4">
                     <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Access Level</p>
-                    <p className="text-success font-semibold">Full Admin</p>
+                    <p className="text-primary font-semibold">Full Admin</p>
                   </div>
                 </div>
               </Card>
@@ -167,7 +167,7 @@ export default function AdminPanel({ className }: AdminPanelProps) {
                   </Button>
                   <Button
                     onClick={() => setActiveTab("ownership")}
-                    className="bg-orange-600 hover:bg-orange-700 text-background font-semibold h-16"
+                    className="bg-primary hover:bg-primary/90 text-background font-semibold h-16"
                   >
                     <div className="text-center">
                       <div className="text-2xl mb-1">👑</div>
@@ -176,7 +176,7 @@ export default function AdminPanel({ className }: AdminPanelProps) {
                   </Button>
                   <Button
                     onClick={() => setActiveTab("monitor")}
-                    className="bg-blue-600 hover:bg-blue-700 text-background font-semibold h-16"
+                    className="bg-primary hover:bg-primary/90 text-background font-semibold h-16"
                   >
                     <div className="text-center">
                       <div className="text-2xl mb-1">📈</div>

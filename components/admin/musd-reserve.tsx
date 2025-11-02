@@ -89,7 +89,7 @@ export default function MusdReserveAdmin() {
             <p className="text-destructive text-xs mt-2">{depositError.message}</p>
           )}
           {isDepositConfirmed && depositHash && (
-            <p className="text-success text-xs mt-2">✓ Deposit TX: {depositHash.slice(0,10)}...{depositHash.slice(-8)}</p>
+            <p className="text-primary text-xs mt-2">✓ Deposit TX: {depositHash.slice(0,10)}...{depositHash.slice(-8)}</p>
           )}
         </div>
         <div className="border border-border rounded p-4">

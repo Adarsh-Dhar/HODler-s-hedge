@@ -163,7 +163,7 @@ export default function RiskAndFeesAdmin() {
               {isRefreshing || isRefreshConfirming ? 'Refreshing...' : 'Refresh from Hermes'}
             </Button>
             {isRefreshConfirmed && (
-              <span className="text-success text-sm">✓ Refresh successful</span>
+              <span className="text-primary text-sm">✓ Refresh successful</span>
             )}
             {refreshError && (
               <span className="text-destructive text-sm">{refreshError.message}</span>

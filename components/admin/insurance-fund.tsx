@@ -61,8 +61,8 @@ export default function InsuranceFundCard() {
       </div>
 
       {hasBadDebt && (
-        <Alert className="mb-4 border-yellow-500/50 bg-yellow-500/10">
-          <AlertDescription className="text-yellow-600 dark:text-yellow-400">
+        <Alert className="mb-4 border-primary/50 bg-primary/10">
+          <AlertDescription className="text-primary">
             ⚠️ Bad debt detected: {totalBadDebt?.toString() || "0"} MUSD
             {coverageRatio !== null && coverageRatio > 0 && (
               <span className="ml-2">
@@ -82,9 +82,9 @@ export default function InsuranceFundCard() {
           <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Token Balance (InsuranceFund MUSD, 18d)</p>
           <p className="text-foreground font-semibold text-sm">{tokenBalance ? tokenBalance.toString() : "0"}</p>
         </div>
-        <div className={`bg-muted rounded p-4 ${hasBadDebt ? "border-2 border-yellow-500/50" : ""}`}>
+        <div className={`bg-muted rounded p-4 ${hasBadDebt ? "border-2 border-primary/50" : ""}`}>
           <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Total Bad Debt (MUSD, 18d)</p>
-          <p className={`font-semibold text-sm ${hasBadDebt ? "text-yellow-600 dark:text-yellow-400" : "text-foreground"}`}>
+          <p className={`font-semibold text-sm ${hasBadDebt ? "text-primary" : "text-foreground"}`}>
             {totalBadDebt ? totalBadDebt.toString() : "0"}
           </p>
         </div>

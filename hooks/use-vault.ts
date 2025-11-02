@@ -1,4 +1,5 @@
-import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
+import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useAccount, usePublicClient } from 'wagmi'
+import { useState } from 'react'
 import { vaultAddress, tBTCAddress } from '@/lib/address'
 import { VaultABI } from '@/lib/abi/Vault'
 import { ERC20ABI } from '@/lib/abi/ERC20'
@@ -222,5 +223,134 @@ export function useTBTCApprove() {
     isConfirming,
     isConfirmed,
     error,
+  }
+}
+
+// ============================================================================
+// COMBINED DEPOSIT WITH APPROVAL
+// ============================================================================
+
+export function useVaultDepositWithApproval() {
+  const { address: userAddress } = useAccount()
+  const publicClient = usePublicClient()
+  const [isApproving, setIsApproving] = useState(false)
+  const [isDepositing, setIsDepositing] = useState(false)
+  const [currentError, setCurrentError] = useState<Error | null>(null)
+  const [approveHash, setApproveHash] = useState<`0x${string}` | undefined>()
+  const [depositHash, setDepositHash] = useState<`0x${string}` | undefined>()
+  const [isConfirmed, setIsConfirmed] = useState(false)
+
+  // Get current allowance
+  const { data: allowance } = useTBTCAllowance(userAddress, vaultAddress as `0x${string}`)
+
+  // Use single writeContract instance
+  const { writeContractAsync } = useWriteContract()
+
+  // Wait for approve transaction
+  const { isLoading: isApproveConfirming } = useWaitForTransactionReceipt({
+    hash: approveHash,
+  })
+
+  // Wait for deposit transaction
+  const { isLoading: isDepositConfirming, isSuccess: isDepositConfirmed } = useWaitForTransactionReceipt({
+    hash: depositHash,
+  })
+
+  const depositWithApproval = async (amount: bigint) => {
+    try {
+      setCurrentError(null)
+      setIsConfirmed(false)
+
+      if (!userAddress) {
+        throw new Error('No user address found. Please connect your wallet.')
+      }
+
+      if (amount <= BigInt(0)) {
+        throw new Error('Amount must be greater than 0')
+      }
+
+      // Check if approval is needed
+      const needsApproval = !allowance || allowance < amount
+
+      if (needsApproval) {
+        // Step 1: Approve
+        setIsApproving(true)
+        setIsDepositing(false)
+
+        try {
+          const approveTxHash = await writeContractAsync({
+            address: tBTCAddress,
+            abi: ERC20ABI,
+            functionName: 'approve',
+            args: [vaultAddress as `0x${string}`, amount],
+          })
+
+          setApproveHash(approveTxHash)
+
+          // Wait for approval confirmation
+          if (publicClient) {
+            await publicClient.waitForTransactionReceipt({ hash: approveTxHash })
+          }
+        } catch (approveErr: any) {
+          setIsApproving(false)
+          const error = approveErr?.message 
+            ? new Error(`Approval failed: ${approveErr.message}`)
+            : new Error('Approval failed')
+          setCurrentError(error)
+          throw error
+        }
+
+        setIsApproving(false)
+      }
+
+      // Step 2: Deposit
+      setIsDepositing(true)
+
+      try {
+        const depositTxHash = await writeContractAsync({
+          address: vaultAddress,
+          abi: VaultABI,
+          functionName: 'deposit',
+          args: [amount],
+        })
+
+        setDepositHash(depositTxHash)
+
+        // Wait for deposit confirmation
+        if (publicClient) {
+          await publicClient.waitForTransactionReceipt({ hash: depositTxHash })
+        }
+
+        setIsConfirmed(true)
+        setIsDepositing(false)
+      } catch (depositErr: any) {
+        setIsDepositing(false)
+        const error = depositErr?.message
+          ? new Error(`Deposit failed: ${depositErr.message}`)
+          : new Error('Deposit failed')
+        setCurrentError(error)
+        throw error
+      }
+    } catch (err: any) {
+      setIsApproving(false)
+      setIsDepositing(false)
+      if (err instanceof Error) {
+        setCurrentError(err)
+      } else {
+        setCurrentError(new Error(err?.message || 'Unknown error occurred'))
+      }
+      throw err
+    }
+  }
+
+  return {
+    depositWithApproval,
+    isPending: isApproving || isDepositing || isApproveConfirming || isDepositConfirming,
+    isApproving,
+    isDepositing,
+    isConfirmed: isConfirmed || isDepositConfirmed,
+    error: currentError,
+    approveHash,
+    depositHash,
   }
 }

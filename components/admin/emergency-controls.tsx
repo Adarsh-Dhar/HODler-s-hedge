@@ -236,11 +236,11 @@ export default function EmergencyControls({ vaultBalance, isOwner }: EmergencyCo
         )}
 
         {isConfirmed && (
-          <div className="mt-4 p-3 bg-success/10 border border-success/20 rounded text-sm">
-            <p className="text-success font-semibold mb-1">✓ Emergency Withdraw Successful</p>
-            <p className="text-success text-xs">{amount} BTC withdrawn from vault</p>
+          <div className="mt-4 p-3 bg-primary/10 border border-primary/20 rounded text-sm">
+            <p className="text-primary font-semibold mb-1">✓ Emergency Withdraw Successful</p>
+            <p className="text-primary text-xs">{amount} BTC withdrawn from vault</p>
             {hash && (
-              <p className="text-success text-xs mt-1">
+              <p className="text-primary text-xs mt-1">
                 TX: {hash.slice(0, 10)}...{hash.slice(-8)}
               </p>
             )}

@@ -129,7 +129,7 @@ export default function OwnershipManagement({ currentOwner, isOwner }: Ownership
               <p className="text-destructive text-xs mt-1">Invalid Ethereum address format</p>
             )}
             {newOwnerAddress && isValidAddress(newOwnerAddress) && (
-              <p className="text-success text-xs mt-1">✓ Valid address format</p>
+              <p className="text-primary text-xs mt-1">✓ Valid address format</p>
             )}
           </div>
 
@@ -193,11 +193,11 @@ export default function OwnershipManagement({ currentOwner, isOwner }: Ownership
         )}
 
         {isTransferConfirmed && (
-          <div className="mt-4 p-3 bg-success/10 border border-success/20 rounded text-sm">
-            <p className="text-success font-semibold mb-1">✓ Ownership Transfer Successful</p>
-            <p className="text-success text-xs">Ownership transferred to {newOwnerAddress}</p>
+          <div className="mt-4 p-3 bg-primary/10 border border-primary/20 rounded text-sm">
+            <p className="text-primary font-semibold mb-1">✓ Ownership Transfer Successful</p>
+            <p className="text-primary text-xs">Ownership transferred to {newOwnerAddress}</p>
             {transferHash && (
-              <p className="text-success text-xs mt-1">
+              <p className="text-primary text-xs mt-1">
                 TX: {transferHash.slice(0, 10)}...{transferHash.slice(-8)}
               </p>
             )}
@@ -313,11 +313,11 @@ export default function OwnershipManagement({ currentOwner, isOwner }: Ownership
         )}
 
         {isRenounceConfirmed && (
-          <div className="mt-4 p-3 bg-success/10 border border-success/20 rounded text-sm">
-            <p className="text-success font-semibold mb-1">✓ Ownership Renounced</p>
-            <p className="text-success text-xs">Administrative privileges have been permanently removed</p>
+          <div className="mt-4 p-3 bg-primary/10 border border-primary/20 rounded text-sm">
+            <p className="text-primary font-semibold mb-1">✓ Ownership Renounced</p>
+            <p className="text-primary text-xs">Administrative privileges have been permanently removed</p>
             {renounceHash && (
-              <p className="text-success text-xs mt-1">
+              <p className="text-primary text-xs mt-1">
                 TX: {renounceHash.slice(0, 10)}...{renounceHash.slice(-8)}
               </p>
             )}

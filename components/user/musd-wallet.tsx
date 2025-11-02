@@ -65,7 +65,7 @@ export default function MusdWalletCard() {
           </div>
         )}
         {isConfirmed && hash && (
-          <p className="text-xs text-success mt-2">✓ Withdrawal sent: {hash.slice(0,10)}...{hash.slice(-8)}</p>
+          <p className="text-xs text-primary mt-2">✓ Withdrawal sent: {hash.slice(0,10)}...{hash.slice(-8)}</p>
         )}
       </div>
     </Card>

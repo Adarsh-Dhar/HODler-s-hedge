@@ -23,9 +23,9 @@ export default function SystemHealth() {
     const hasBalance = vaultBalanceFormatted > 0
     
     if (vaultRefCorrect && hasOwner && hasBalance) {
-      return { status: "healthy", color: "text-success", icon: "✅" }
+      return { status: "healthy", color: "text-primary", icon: "✅" }
     } else if (vaultRefCorrect && hasOwner) {
-      return { status: "warning", color: "text-yellow-600", icon: "⚠️" }
+      return { status: "warning", color: "text-primary", icon: "⚠️" }
     } else {
       return { status: "critical", color: "text-destructive", icon: "❌" }
     }
@@ -64,30 +64,30 @@ export default function SystemHealth() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-muted rounded p-3">
             <div className="flex items-center gap-2 mb-1">
-              <div className={`w-2 h-2 rounded-full ${vaultTradingEngine === tradingEngineAddress ? "bg-success" : "bg-destructive"}`}></div>
+              <div className={`w-2 h-2 rounded-full ${vaultTradingEngine === tradingEngineAddress ? "bg-primary" : "bg-destructive"}`}></div>
               <p className="text-muted-foreground text-xs uppercase tracking-wide">Contract References</p>
             </div>
-            <p className={`text-sm font-semibold ${vaultTradingEngine === tradingEngineAddress ? "text-success" : "text-destructive"}`}>
+            <p className={`text-sm font-semibold ${vaultTradingEngine === tradingEngineAddress ? "text-primary" : "text-destructive"}`}>
               {vaultTradingEngine === tradingEngineAddress ? "Correct" : "Incorrect"}
             </p>
           </div>
 
           <div className="bg-muted rounded p-3">
             <div className="flex items-center gap-2 mb-1">
-              <div className={`w-2 h-2 rounded-full ${vaultOwner ? "bg-success" : "bg-destructive"}`}></div>
+              <div className={`w-2 h-2 rounded-full ${vaultOwner ? "bg-primary" : "bg-destructive"}`}></div>
               <p className="text-muted-foreground text-xs uppercase tracking-wide">Vault Owner</p>
             </div>
-            <p className={`text-sm font-semibold ${vaultOwner ? "text-success" : "text-destructive"}`}>
+            <p className={`text-sm font-semibold ${vaultOwner ? "text-primary" : "text-destructive"}`}>
               {vaultOwner ? "Set" : "Not Set"}
             </p>
           </div>
 
           <div className="bg-muted rounded p-3">
             <div className="flex items-center gap-2 mb-1">
-              <div className={`w-2 h-2 rounded-full ${vaultBalanceFormatted > 0 ? "bg-success" : "bg-yellow-500"}`}></div>
+              <div className={`w-2 h-2 rounded-full ${vaultBalanceFormatted > 0 ? "bg-primary" : "bg-primary"}`}></div>
               <p className="text-muted-foreground text-xs uppercase tracking-wide">Vault Balance</p>
             </div>
-            <p className={`text-sm font-semibold ${vaultBalanceFormatted > 0 ? "text-success" : "text-yellow-600"}`}>
+            <p className={`text-sm font-semibold ${vaultBalanceFormatted > 0 ? "text-primary" : "text-primary"}`}>
               {vaultBalanceFormatted > 0 ? "Active" : "Empty"}
             </p>
           </div>
@@ -110,7 +110,7 @@ export default function SystemHealth() {
 
           <div className="bg-muted rounded p-4">
             <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Total Margin Locked</p>
-            <p className="text-blue-600 font-semibold text-lg">
+            <p className="text-primary font-semibold text-lg">
               {totalLockedFormatted.toFixed(4)} BTC
             </p>
             <p className="text-muted-foreground text-xs">
@@ -120,7 +120,7 @@ export default function SystemHealth() {
 
           <div className="bg-muted rounded p-4">
             <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Total Margin Unlocked</p>
-            <p className="text-green-600 font-semibold text-lg">
+            <p className="text-primary font-semibold text-lg">
               {totalUnlockedFormatted.toFixed(4)} BTC
             </p>
             <p className="text-muted-foreground text-xs">
@@ -130,7 +130,7 @@ export default function SystemHealth() {
 
           <div className="bg-muted rounded p-4">
             <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Total PnL</p>
-            <p className={`font-semibold text-lg ${totalPnLFormatted >= 0 ? "text-success" : "text-destructive"}`}>
+            <p className={`font-semibold text-lg ${totalPnLFormatted >= 0 ? "text-primary" : "text-destructive"}`}>
               {totalPnLFormatted >= 0 ? "+" : ""}{totalPnLFormatted.toFixed(4)} BTC
             </p>
             <p className="text-muted-foreground text-xs">

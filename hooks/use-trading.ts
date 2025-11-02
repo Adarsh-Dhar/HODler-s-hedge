@@ -1222,24 +1222,77 @@ export function useTradingEngineClosePosition() {
       if (!userAddress) {
         throw new Error('No user address found')
       }
+
+      if (!publicClient) {
+        throw new Error('Public client not available. Cannot close position.')
+      }
       
-      // Check if we have a position
-      if (!(position as any)?.exists) {
+      // IMPORTANT: Read position directly from contract to bypass stale cache
+      // This ensures we have the latest on-chain state
+      let currentPosition: any = null
+      try {
+        currentPosition = await publicClient.readContract({
+          address: tradingEngineAddress,
+          abi: TradingEngineABI,
+          functionName: 'getPosition',
+          args: [userAddress],
+        }) as any
+      } catch (readErr: any) {
+        console.error('Failed to read position from contract:', readErr)
+        throw new Error('Failed to read position from contract. Please try again.')
+      }
+      
+      // Check if we have a position (using fresh on-chain data)
+      if (!currentPosition?.exists) {
         throw new Error('No position found to close. You need to open a position first.')
       }
       
-      // Check if contract is paused
-      if (isPaused) {
+      // Check if contract is paused (read directly from contract)
+      let isPausedOnChain: boolean = false
+      try {
+        isPausedOnChain = await publicClient.readContract({
+          address: tradingEngineAddress,
+          abi: TradingEngineABI,
+          functionName: 'paused',
+        }) as boolean
+      } catch (pauseErr: any) {
+        console.warn('Could not check paused status:', pauseErr?.message)
+      }
+      
+      if (isPausedOnChain) {
         throw new Error('Contract is paused. Trading is temporarily disabled.')
       }
       
-      // Check contract references
-      if (vaultTradingEngine !== tradingEngineAddress) {
-        throw new Error(`Vault contract reference incorrect. Expected: ${tradingEngineAddress}, Got: ${vaultTradingEngine}`)
+      // Check contract references (read directly from contracts)
+      let vaultTradingEngineOnChain: `0x${string}` | undefined
+      let fundingTradingEngineOnChain: `0x${string}` | undefined
+      
+      try {
+        vaultTradingEngineOnChain = await publicClient.readContract({
+          address: vaultAddress,
+          abi: VaultABI,
+          functionName: 'tradingEngine',
+        }) as `0x${string}`
+      } catch (vaultErr: any) {
+        console.warn('Could not read vault tradingEngine reference:', vaultErr?.message)
       }
       
-      if (fundingTradingEngine !== tradingEngineAddress) {
-        throw new Error(`FundingRate contract reference incorrect. Expected: ${tradingEngineAddress}, Got: ${fundingTradingEngine}`)
+      try {
+        fundingTradingEngineOnChain = await publicClient.readContract({
+          address: fundingRateAddress,
+          abi: FundingRateABI,
+          functionName: 'tradingEngine',
+        }) as `0x${string}`
+      } catch (fundingErr: any) {
+        console.warn('Could not read fundingRate tradingEngine reference:', fundingErr?.message)
+      }
+      
+      if (vaultTradingEngineOnChain && vaultTradingEngineOnChain !== tradingEngineAddress) {
+        throw new Error(`Vault contract reference incorrect. Expected: ${tradingEngineAddress}, Got: ${vaultTradingEngineOnChain}`)
+      }
+      
+      if (fundingTradingEngineOnChain && fundingTradingEngineOnChain !== tradingEngineAddress) {
+        throw new Error(`FundingRate contract reference incorrect. Expected: ${tradingEngineAddress}, Got: ${fundingTradingEngineOnChain}`)
       }
 
       // REQUIRED: Refresh mark price from Pyth oracle before closing position
@@ -1250,6 +1303,374 @@ export function useTradingEngineClosePosition() {
         console.error('Price refresh failed, blocking position closing:', refreshError)
         // NO FALLBACK: Block close if refresh fails
         throw new Error(`Cannot close position: Price refresh failed. ${refreshError?.message || 'Oracle update failed. Please try again.'}`)
+      }
+
+      // DEBUG: Read contract state to diagnose arithmetic error
+      try {
+        const [longOI, shortOI, currentOI, positionData, markPrice, oracleResult] = await Promise.all([
+          publicClient.readContract({
+            address: tradingEngineAddress,
+            abi: TradingEngineABI,
+            functionName: 'longOpenInterestTbtc',
+          }) as Promise<bigint>,
+          publicClient.readContract({
+            address: tradingEngineAddress,
+            abi: TradingEngineABI,
+            functionName: 'shortOpenInterestTbtc',
+          }) as Promise<bigint>,
+          publicClient.readContract({
+            address: tradingEngineAddress,
+            abi: TradingEngineABI,
+            functionName: 'currentOpenInterestTbtc',
+          }) as Promise<bigint>,
+          publicClient.readContract({
+            address: tradingEngineAddress,
+            abi: TradingEngineABI,
+            functionName: 'getPosition',
+            args: [userAddress],
+          }) as Promise<any>,
+          publicClient.readContract({
+            address: tradingEngineAddress,
+            abi: TradingEngineABI,
+            functionName: 'getMarkPrice',
+          }) as Promise<bigint>,
+          publicClient.readContract({
+            address: tradingEngineAddress,
+            abi: TradingEngineABI,
+            functionName: 'peekOraclePrice',
+          }) as Promise<[bigint, bigint]>,
+        ])
+
+        console.log('=== CLOSE POSITION DEBUG INFO ===')
+        console.log('Position Data:', {
+          exists: positionData?.exists,
+          isLong: positionData?.isLong,
+          size: positionData?.size?.toString(),
+          margin: positionData?.margin?.toString(),
+          entryPrice: positionData?.entryPrice?.toString(),
+          leverage: positionData?.leverage?.toString(),
+        })
+        console.log('Open Interest:', {
+          longOI: longOI.toString(),
+          shortOI: shortOI.toString(),
+          currentOI: currentOI.toString(),
+          positionSize: positionData?.size?.toString(),
+        })
+        console.log('Price Info:', {
+          markPrice: markPrice.toString(),
+          oraclePrice: oracleResult[0]?.toString(),
+          oraclePriceFormatted: oracleResult[0] ? (Number(oracleResult[0]) / 1e18).toFixed(2) : 'N/A',
+          markPriceFormatted: (Number(markPrice) / 1e18).toFixed(2),
+        })
+
+        // Check for potential underflow in open interest tracking
+        const positionSize = positionData?.size as bigint
+        if (positionData?.isLong) {
+          if (positionSize > longOI) {
+            console.error('⚠️ UNDERFLOW DETECTED: position.size > longOpenInterestTbtc', {
+              positionSize: positionSize.toString(),
+              longOI: longOI.toString(),
+              difference: (positionSize - longOI).toString(),
+              positionSizeNum: Number(positionSize) / 1e8,
+              longOINum: Number(longOI) / 1e8,
+            })
+          } else {
+            console.log('✓ Long OI check passed:', {
+              positionSize: Number(positionSize) / 1e8,
+              longOI: Number(longOI) / 1e8,
+              willRemain: Number(longOI - positionSize) / 1e8,
+            })
+          }
+        } else {
+          if (positionSize > shortOI) {
+            console.error('⚠️ UNDERFLOW DETECTED: position.size > shortOpenInterestTbtc', {
+              positionSize: positionSize.toString(),
+              shortOI: shortOI.toString(),
+              difference: (positionSize - shortOI).toString(),
+              positionSizeNum: Number(positionSize) / 1e8,
+              shortOINum: Number(shortOI) / 1e8,
+            })
+          } else {
+            console.log('✓ Short OI check passed:', {
+              positionSize: Number(positionSize) / 1e8,
+              shortOI: Number(shortOI) / 1e8,
+              willRemain: Number(shortOI - positionSize) / 1e8,
+            })
+          }
+        }
+
+        if (positionSize > currentOI) {
+          console.error('⚠️ UNDERFLOW DETECTED: position.size > currentOpenInterestTbtc', {
+            positionSize: positionSize.toString(),
+            currentOI: currentOI.toString(),
+            difference: (positionSize - currentOI).toString(),
+            positionSizeNum: Number(positionSize) / 1e8,
+            currentOINum: Number(currentOI) / 1e8,
+          })
+        } else {
+          console.log('✓ Current OI check passed:', {
+            positionSize: Number(positionSize) / 1e8,
+            currentOI: Number(currentOI) / 1e8,
+            willRemain: Number(currentOI - positionSize) / 1e8,
+          })
+        }
+
+        // Check PnL calculation potential issues
+        const entryPrice = positionData?.entryPrice as bigint
+        const oraclePrice = oracleResult[0]
+        if (entryPrice && oraclePrice) {
+          if (positionData.isLong) {
+            const pnlCalculation = (oraclePrice - entryPrice) * positionSize / entryPrice
+            console.log('PnL Calculation Preview (Long):', {
+              entryPrice: (Number(entryPrice) / 1e18).toFixed(2),
+              currentPrice: (Number(oraclePrice) / 1e18).toFixed(2),
+              priceDiff: (Number(oraclePrice - entryPrice) / 1e18).toFixed(2),
+              positionSize: Number(positionSize) / 1e8,
+              pnlEstimate: Number(pnlCalculation) / 1e8,
+            })
+          } else {
+            const pnlCalculation = (entryPrice - oraclePrice) * positionSize / entryPrice
+            console.log('PnL Calculation Preview (Short):', {
+              entryPrice: (Number(entryPrice) / 1e18).toFixed(2),
+              currentPrice: (Number(oraclePrice) / 1e18).toFixed(2),
+              priceDiff: (Number(entryPrice - oraclePrice) / 1e18).toFixed(2),
+              positionSize: Number(positionSize) / 1e8,
+              pnlEstimate: Number(pnlCalculation) / 1e8,
+            })
+          }
+        }
+
+        // Check funding payment potential
+        try {
+          const fundingRate = await publicClient.readContract({
+            address: fundingRateAddress,
+            abi: FundingRateABI,
+            functionName: 'fundingRate',
+          }) as bigint
+          
+          const fundingPayment = positionData.isLong 
+            ? (BigInt(positionSize.toString()) * fundingRate) / BigInt(10000)
+            : -(BigInt(positionSize.toString()) * fundingRate) / BigInt(10000)
+          
+          console.log('Funding Info:', {
+            fundingRate: Number(fundingRate),
+            fundingPayment: Number(fundingPayment) / 1e8,
+            positionSize: Number(positionSize) / 1e8,
+          })
+        } catch (fundingErr) {
+          console.warn('Could not read funding info:', fundingErr)
+        }
+
+        // Calculate expected values to check for arithmetic errors
+        const entryPriceBigInt = BigInt(entryPrice.toString())
+        const oraclePriceBigInt = BigInt(oraclePrice.toString())
+        
+        // Calculate PnL in tBTC (matching contract logic)
+        let pnlTbtc: bigint
+        if (positionData.isLong) {
+          // PnL = (price - entryPrice) * size / entryPrice
+          const priceDiff = oraclePriceBigInt > entryPriceBigInt 
+            ? oraclePriceBigInt - entryPriceBigInt 
+            : entryPriceBigInt - oraclePriceBigInt
+          if (oraclePriceBigInt >= entryPriceBigInt) {
+            // Profit
+            pnlTbtc = (priceDiff * positionSize) / entryPriceBigInt
+          } else {
+            // Loss (negative)
+            pnlTbtc = -(priceDiff * positionSize) / entryPriceBigInt
+          }
+        } else {
+          // Short: PnL = (entryPrice - price) * size / entryPrice
+          const priceDiff = entryPriceBigInt > oraclePriceBigInt 
+            ? entryPriceBigInt - oraclePriceBigInt 
+            : oraclePriceBigInt - entryPriceBigInt
+          if (entryPriceBigInt >= oraclePriceBigInt) {
+            // Profit
+            pnlTbtc = (priceDiff * positionSize) / entryPriceBigInt
+          } else {
+            // Loss (negative)
+            pnlTbtc = -(priceDiff * positionSize) / entryPriceBigInt
+          }
+        }
+        
+        // Calculate total PnL including funding
+        const fundingPaymentCalc = BigInt(0) // fundingRate is 0
+        const totalPnlTbtc = pnlTbtc - fundingPaymentCalc
+        
+        // Calculate PnL in MUSD (matching contract: (totalPnlTbtc * price18) / 1e8)
+        const pnlMusdCalc = (totalPnlTbtc * oraclePriceBigInt) / BigInt(1e8)
+        
+        // Check protocol fee
+        const notionalMusdCalc = (positionSize * oraclePriceBigInt) / BigInt(1e8)
+        
+        // Read protocol fee settings
+        try {
+          const protocolFeeBps = await publicClient.readContract({
+            address: tradingEngineAddress,
+            abi: TradingEngineABI,
+            functionName: 'protocolFeeBps',
+          }) as bigint
+          
+          const treasury = await publicClient.readContract({
+            address: tradingEngineAddress,
+            abi: TradingEngineABI,
+            functionName: 'treasury',
+          }) as `0x${string}`
+          
+          const feeMusdCalc = protocolFeeBps > BigInt(0) && treasury !== '0x0000000000000000000000000000000000000000'
+            ? (notionalMusdCalc * protocolFeeBps) / BigInt(10000)
+            : BigInt(0)
+          
+          const finalPnlMusd = pnlMusdCalc - BigInt(feeMusdCalc.toString())
+          
+          console.log('=== ARITHMETIC CALCULATIONS ===')
+          console.log('PnL Calculations:', {
+            pnlTbtc: Number(pnlTbtc) / 1e8,
+            totalPnlTbtc: Number(totalPnlTbtc) / 1e8,
+            pnlMusdRaw: Number(pnlMusdCalc) / 1e18,
+            notionalMusd: Number(notionalMusdCalc) / 1e18,
+            protocolFeeBps: Number(protocolFeeBps),
+            feeMusd: Number(feeMusdCalc) / 1e18,
+            finalPnlMusd: Number(finalPnlMusd) / 1e18,
+          })
+          
+          // Check for potential overflow/underflow issues
+          // Using BigInt constructor to avoid linting issues with exponentiation
+          const MAX_INT256 = BigInt('57896044618658097711785492504343953926634992332820282019728792003956564819967') // 2^255 - 1
+          const MIN_INT256 = BigInt('-57896044618658097711785492504343953926634992332820282019728792003956564819968') // -2^255
+          
+          if (pnlMusdCalc < MIN_INT256 || pnlMusdCalc > MAX_INT256) {
+            console.error('⚠️ INT256 OVERFLOW: pnlMusd exceeds int256 range', {
+              pnlMusd: pnlMusdCalc.toString(),
+              min: MIN_INT256.toString(),
+              max: MAX_INT256.toString(),
+            })
+          }
+          
+          if (finalPnlMusd < MIN_INT256 || finalPnlMusd > MAX_INT256) {
+            console.error('⚠️ INT256 OVERFLOW: finalPnlMusd exceeds int256 range', {
+              finalPnlMusd: finalPnlMusd.toString(),
+              min: MIN_INT256.toString(),
+              max: MAX_INT256.toString(),
+            })
+          }
+          
+          // Check the negation operation that happens in Vault (uint256(-pnlMusd))
+          // This is the critical check - if pnlMusd is type(int256).min, negating it will overflow
+          if (finalPnlMusd < 0) {
+            const negatedValue = -finalPnlMusd
+            const MAX_UINT256 = BigInt('115792089237316195423570985008687907853269984665640564039457584007913129639935') // 2^256 - 1
+            
+            // Check if this is the problematic case: pnlMusd == type(int256).min
+            if (finalPnlMusd <= MIN_INT256) {
+              console.error('⚠️ CRITICAL: pnlMusd equals or exceeds type(int256).min - negation will overflow!', {
+                pnlMusd: finalPnlMusd.toString(),
+                minInt256: MIN_INT256.toString(),
+                issue: 'Contract will fail at Vault.sol:207 (uint256(-pnlMusd))',
+              })
+              
+              // Throw a clear error before attempting the transaction
+              throw new Error(
+                'Cannot close position: Arithmetic overflow detected. ' +
+                'The loss on this position is too large for the contract to handle safely. ' +
+                'This is a contract-level limitation. Please contact support - the contract may need to be upgraded to handle this edge case.'
+              )
+            }
+            
+            if (negatedValue > MAX_UINT256) {
+              console.error('⚠️ UINT256 OVERFLOW: Negation of pnlMusd exceeds uint256 range', {
+                pnlMusd: finalPnlMusd.toString(),
+                negated: negatedValue.toString(),
+                max: MAX_UINT256.toString(),
+              })
+              
+              throw new Error(
+                'Cannot close position: Negation overflow detected. ' +
+                'The calculated loss value exceeds the contract\'s safe handling range. ' +
+                'Please contact support for assistance.'
+              )
+            } else {
+              console.log('✓ Negation check passed:', {
+                pnlMusd: Number(finalPnlMusd) / 1e18,
+                negatedValue: Number(negatedValue) / 1e18,
+              })
+            }
+          }
+        } catch (calcErr) {
+          // If our calculation threw an error, it means we detected the issue - re-throw it
+          if (calcErr instanceof Error && calcErr.message.includes('Cannot close position')) {
+            throw calcErr
+          }
+          console.warn('Could not calculate fee info:', calcErr)
+        }
+
+      } catch (debugErr) {
+        // If we threw a specific error about arithmetic issues, re-throw it
+        if (debugErr instanceof Error && debugErr.message.includes('Cannot close position')) {
+          throw debugErr
+        }
+        console.warn('Could not read contract state for debugging:', debugErr)
+      }
+
+      // Simulate the contract call first to catch errors early and get better error messages
+      try {
+        await publicClient.simulateContract({
+          address: tradingEngineAddress,
+          abi: TradingEngineABI,
+          functionName: 'closePosition',
+          account: userAddress,
+        })
+      } catch (simulateError: any) {
+        console.error('Contract simulation failed:', simulateError)
+        
+        // Try to decode the error
+        let errorMessage = simulateError?.message || 'Transaction simulation failed'
+        
+        if (simulateError?.cause) {
+          try {
+            // Try to decode revert reason from error data
+            if (simulateError.cause.data) {
+              const decoded = decodeErrorResult({
+                abi: TradingEngineABI,
+                data: simulateError.cause.data as `0x${string}`,
+              })
+              errorMessage = decoded.errorName || errorMessage
+              
+              // Provide user-friendly error messages based on decoded error
+              if (decoded.errorName === 'NoPositionToClose' || errorMessage.includes('No position to close')) {
+                throw new Error('No position found to close. You may not have an open position.')
+              }
+            }
+          } catch (decodeErr) {
+            // If decoding fails, continue with original error
+          }
+        }
+        
+        // Map common error patterns
+        if (errorMessage.includes('No position to close') || errorMessage.includes('NoPositionToClose')) {
+          throw new Error('No position found to close. You may not have an open position.')
+        } else if (errorMessage.toLowerCase().includes('arithmetic') && 
+                   (errorMessage.toLowerCase().includes('underflow') || errorMessage.toLowerCase().includes('overflow'))) {
+          // Arithmetic underflow/overflow - likely due to contract state inconsistency
+          let diagnosticMessage = 'Cannot close position: Arithmetic error detected.\n\n'
+          diagnosticMessage += 'This usually indicates:\n'
+          diagnosticMessage += '• Open interest tracking mismatch\n'
+          diagnosticMessage += '• Funding payment calculation issue\n'
+          diagnosticMessage += '• PnL calculation error\n\n'
+          diagnosticMessage += 'Possible solutions:\n'
+          diagnosticMessage += '• Wait a moment and try again\n'
+          diagnosticMessage += '• Contact support if the issue persists\n'
+          diagnosticMessage += '• The contract admin may need to fix the open interest tracking'
+          throw new Error(diagnosticMessage)
+        } else if (errorMessage.includes('Contract is paused') || errorMessage.includes('paused')) {
+          throw new Error('Trading is currently paused. Please try again later.')
+        } else if (errorMessage.includes('Vault: Only TradingEngine')) {
+          throw new Error('Vault contract authorization failed. Contract references may be incorrect.')
+        } else if (errorMessage.includes('FundingRate: Only TradingEngine')) {
+          throw new Error('FundingRate contract authorization failed. Contract references may be incorrect.')
+        } else {
+          throw new Error(`Transaction will fail: ${errorMessage}`)
+        }
       }
 
       // Now try the actual closePosition call - use writeContractAsync to await the hash
@@ -1345,12 +1766,39 @@ export function useTradingEngineClosePosition() {
         throw new Error('Network connection error. Please check your connection and try again.')
       } else if (err?.message?.includes('No position to close') || err?.message?.includes('TradingEngine: No position to close')) {
         throw new Error('No position found to close. You may not have an open position.')
-      } else if (err?.message?.includes('CALL_EXCEPTION') || err?.message?.includes('missing revert data')) {
-        throw new Error('Transaction failed. This usually means you don\'t have an open position to close.')
+      } else if (err?.message?.includes('CALL_EXCEPTION') || err?.message?.includes('missing revert data') || err?.code === 'CALL_EXCEPTION') {
+        // Enhanced error message for missing revert data during close position
+        // This usually means the position doesn't exist on-chain even though cache says it does
+        let diagnosticMessage = 'Transaction failed during gas estimation (missing revert data).\n\n'
+        diagnosticMessage += 'Common causes:\n'
+        diagnosticMessage += '• Position already closed (cache may be stale)\n'
+        diagnosticMessage += '• Position does not exist on-chain\n'
+        diagnosticMessage += '• Contract state mismatch\n\n'
+        diagnosticMessage += 'Please refresh the page and check your position status.'
+        throw new Error(diagnosticMessage)
       } else if (err?.message?.includes('revert') && err?.message?.includes('No position to close')) {
         throw new Error('No position found to close. You may not have an open position.')
       } else if (err?.message?.includes('Contract is paused') || err?.message?.includes('paused')) {
         throw new Error('Trading is currently paused. Please try again later.')
+      } else if (err?.message?.toLowerCase().includes('arithmetic') && 
+                 (err?.message?.toLowerCase().includes('underflow') || err?.message?.toLowerCase().includes('overflow'))) {
+        // Check if this is already our diagnostic error or the original technical error
+        if (err?.message?.includes('Cannot close position: Arithmetic error detected')) {
+          // Already our diagnostic message, re-throw as-is
+          throw err
+        } else {
+          // Original technical error, provide diagnostic message
+          let diagnosticMessage = 'Cannot close position: Arithmetic error detected.\n\n'
+          diagnosticMessage += 'This usually indicates:\n'
+          diagnosticMessage += '• Open interest tracking mismatch\n'
+          diagnosticMessage += '• Funding payment calculation issue\n'
+          diagnosticMessage += '• PnL calculation error\n\n'
+          diagnosticMessage += 'Possible solutions:\n'
+          diagnosticMessage += '• Wait a moment and try again\n'
+          diagnosticMessage += '• Contact support if the issue persists\n'
+          diagnosticMessage += '• The contract admin may need to fix the open interest tracking'
+          throw new Error(diagnosticMessage)
+        }
       } else if (err?.message?.includes('estimateGas')) {
         throw new Error('Cannot estimate gas for closing position. This usually means you don\'t have an open position.')
       } else if (err?.message?.includes('Vault: Only TradingEngine')) {

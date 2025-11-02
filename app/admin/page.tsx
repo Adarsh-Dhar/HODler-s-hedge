@@ -47,8 +47,8 @@ export default function AdminPage() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="w-8 h-8 bg-orange-500 rounded-full mx-auto mb-4"></div>
-          <p className="text-orange-600 font-semibold mb-2">Access Denied</p>
+          <div className="w-8 h-8 bg-primary rounded-full mx-auto mb-4"></div>
+          <p className="text-primary font-semibold mb-2">Access Denied</p>
           <p className="text-muted-foreground text-sm mb-4">Only the vault owner can access the admin panel</p>
           <div className="bg-muted rounded p-4 text-left max-w-md mx-auto">
             <p className="text-sm font-semibold mb-2">Your Address:</p>

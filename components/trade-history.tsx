@@ -101,19 +101,19 @@ export default function TradeHistory() {
   const getEventBadge = (event: TradeEvent) => {
     if (event.eventType === 'opened') {
       return (
-        <span className="inline-flex items-center rounded px-2 py-1 text-xs font-medium bg-blue-500/10 border border-blue-500/20 text-blue-600">
+        <span className="inline-flex items-center rounded px-2 py-1 text-xs font-medium bg-primary/10 border border-primary/20 text-primary">
           Open {event.isLong ? 'Long' : 'Short'}
         </span>
       )
     } else if (event.eventType === 'closed') {
       return (
-        <span className="inline-flex items-center rounded px-2 py-1 text-xs font-medium bg-green-500/10 border border-green-500/20 text-green-600">
+        <span className="inline-flex items-center rounded px-2 py-1 text-xs font-medium bg-primary/10 border border-primary/20 text-primary">
           Closed
         </span>
       )
     } else {
       return (
-        <span className="inline-flex items-center rounded px-2 py-1 text-xs font-medium bg-orange-500/10 border border-orange-500/20 text-orange-600">
+        <span className="inline-flex items-center rounded px-2 py-1 text-xs font-medium bg-primary/10 border border-primary/20 text-primary">
           Liquidated
         </span>
       )
@@ -131,15 +131,15 @@ export default function TradeHistory() {
           </div>
           <div className="bg-muted rounded p-3 border border-border">
             <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Opened</p>
-            <p className="text-blue-600 font-semibold text-lg">{stats.openedCount}</p>
+            <p className="text-primary font-semibold text-lg">{stats.openedCount}</p>
           </div>
           <div className="bg-muted rounded p-3 border border-border">
             <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Closed</p>
-            <p className="text-green-600 font-semibold text-lg">{stats.closedCount}</p>
+            <p className="text-primary font-semibold text-lg">{stats.closedCount}</p>
           </div>
           <div className="bg-muted rounded p-3 border border-border">
             <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Total PnL</p>
-            <p className={`font-semibold text-lg ${Number(stats.totalPnL) >= 0 ? "text-success" : "text-destructive"}`}>
+            <p className={`font-semibold text-lg ${Number(stats.totalPnL) >= 0 ? "text-primary" : "text-destructive"}`}>
               {Number(stats.totalPnL) >= 0 ? "+" : ""}{formatAmount(stats.totalPnL, 8)} tBTC
             </p>
           </div>
@@ -420,7 +420,7 @@ export default function TradeHistory() {
                           <p className="text-foreground font-semibold">
                             Position Closed
                           </p>
-                          <span className={`text-sm font-semibold ${Number((event as PositionClosedEvent).pnl) >= 0 ? "text-success" : "text-destructive"}`}>
+                          <span className={`text-sm font-semibold ${Number((event as PositionClosedEvent).pnl) >= 0 ? "text-primary" : "text-destructive"}`}>
                             {Number((event as PositionClosedEvent).pnl) >= 0 ? "+" : ""}
                             {formatAmount((event as PositionClosedEvent).pnl, 8)} tBTC
                           </span>
@@ -438,7 +438,7 @@ export default function TradeHistory() {
                           <p className="text-foreground font-semibold">
                             Position Liquidated
                           </p>
-                          <span className="text-xs text-orange-600">
+                          <span className="text-xs text-primary">
                             Reward: {formatAmount((event as LiquidatedEvent).reward, 18)} MUSD
                           </span>
                         </div>

@@ -91,7 +91,7 @@ export default function ChartPanel({
               ${currentPrice?.toLocaleString("en-US", { maximumFractionDigits: 2 })}
             </h2>
             {priceChange !== undefined ? (
-              <p className={`text-sm mt-2 ${priceChange >= 0 ? "text-success" : "text-destructive"}`}>
+              <p className={`text-sm mt-2 ${priceChange >= 0 ? "text-primary" : "text-destructive"}`}>
                 {priceChange >= 0 ? "+" : ""}
                 {priceChange.toFixed(2)}% 24h
               </p>
@@ -113,7 +113,7 @@ export default function ChartPanel({
                 {isRefreshing || isRefreshConfirming ? 'Refreshing...' : 'Refresh Price'}
               </Button>
               {isRefreshConfirmed && (
-                <span className="text-success text-xs">✓ Updated</span>
+                <span className="text-primary text-xs">✓ Updated</span>
               )}
               {refreshError && (
                 <span className="text-destructive text-xs" title={refreshError.message}>
@@ -315,19 +315,19 @@ export default function ChartPanel({
                 <p className="text-muted-foreground text-xs uppercase tracking-wide mb-2">System Status</p>
                 <div className="flex items-center gap-4 text-xs">
                   <div className="flex items-center gap-1">
-                    <div className="w-2 h-2 bg-success rounded-full"></div>
+                    <div className="w-2 h-2 bg-primary rounded-full"></div>
                     <span className="text-foreground">System Operational</span>
                   </div>
                   <div className="flex items-center gap-1">
-                    <div className={`w-2 h-2 rounded-full ${isFundingDue ? "bg-destructive" : "bg-success"}`}></div>
+                    <div className={`w-2 h-2 rounded-full ${isFundingDue ? "bg-destructive" : "bg-primary"}`}></div>
                     <span className="text-foreground">
                       Funding {isFundingDue ? "Due" : "Active"}
                     </span>
                   </div>
                   {isOwner && (
                     <div className="flex items-center gap-1">
-                      <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                      <span className="text-orange-600 font-semibold">Admin Access</span>
+                      <div className="w-2 h-2 bg-primary rounded-full"></div>
+                      <span className="text-primary font-semibold">Admin Access</span>
                     </div>
                   )}
                 </div>

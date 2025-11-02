@@ -86,7 +86,7 @@ export default function OracleConfig() {
           )}
           
           {isConfirmed && hash && (
-            <p className="text-success text-xs mt-2">
+            <p className="text-primary text-xs mt-2">
               ✓ Oracle set successfully. TX: {hash.slice(0, 10)}...{hash.slice(-8)}
             </p>
           )}

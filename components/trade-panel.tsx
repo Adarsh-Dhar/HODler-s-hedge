@@ -18,17 +18,13 @@ interface TradePanelProps {
   currentPosition?: any
   // Deposit props
   walletBalance?: bigint
-  allowance?: bigint
-  onDeposit: (amount: bigint) => void
-  onApprove: (amount: bigint) => void
+  onDepositWithApproval: (amount: bigint) => Promise<void>
   isDepositing: boolean
   isApproving: boolean
   walletBalanceError?: Error
   walletBalanceLoading?: boolean
   depositError?: Error
-  approveError?: Error
   isDepositConfirmed?: boolean
-  isApproveConfirmed?: boolean
   depositHash?: string
   // Withdraw props
   onWithdraw: (amount: bigint) => void
@@ -50,17 +46,13 @@ export default function TradePanel({
   openPositionHash,
   currentPosition,
   walletBalance,
-  allowance,
-  onDeposit,
-  onApprove,
+  onDepositWithApproval,
   isDepositing,
   isApproving,
   walletBalanceError,
   walletBalanceLoading,
   depositError,
-  approveError,
   isDepositConfirmed,
-  isApproveConfirmed,
   depositHash,
   onWithdraw,
   isWithdrawing,
@@ -145,7 +137,9 @@ export default function TradePanel({
           <button
             onClick={() => setTradeType("long")}
             className={`flex-1 py-2 px-4 rounded font-semibold transition-colors ${
-              tradeType === "long" ? "bg-success text-background" : "bg-muted text-foreground hover:bg-muted/80"
+              tradeType === "long" 
+                ? "bg-primary text-background border-2 border-primary" 
+                : "bg-background text-primary border-2 border-primary hover:bg-primary/10"
             }`}
           >
             Long
@@ -153,7 +147,9 @@ export default function TradePanel({
           <button
             onClick={() => setTradeType("short")}
             className={`flex-1 py-2 px-4 rounded font-semibold transition-colors ${
-              tradeType === "short" ? "bg-destructive text-background" : "bg-muted text-foreground hover:bg-muted/80"
+              tradeType === "short" 
+                ? "bg-primary text-background border-2 border-primary" 
+                : "bg-background text-primary border-2 border-primary hover:bg-primary/10"
             }`}
           >
             Short
@@ -278,10 +274,10 @@ export default function TradePanel({
                 </div>
               )}
 
-              {/* Approve/Deposit Button */}
+              {/* Deposit Button */}
               {depositAmount > 0 && (
                 <Button
-                  onClick={() => {
+                  onClick={async () => {
                     if (depositAmount <= 0) {
                       console.error('Cannot deposit 0 or negative amount:', depositAmount)
                       return
@@ -292,11 +288,12 @@ export default function TradePanel({
                     // Store the deposit amount before transaction
                     setLastDepositedAmount(depositAmount)
                     
-                    // Always try approval first if allowance is 0 or undefined
-                    if (!allowance || allowance === BigInt(0) || allowance < amount) {
-                      onApprove(amount)
-                    } else {
-                      onDeposit(amount)
+                    // Call the combined function that handles approval and deposit
+                    try {
+                      await onDepositWithApproval(amount)
+                    } catch (error) {
+                      console.error('Deposit with approval failed:', error)
+                      // Error is handled by the hook and passed as depositError
                     }
                   }}
                   disabled={
@@ -315,27 +312,12 @@ export default function TradePanel({
                     ? "Approving..." 
                     : isDepositing 
                     ? "Depositing..." 
-                    : !allowance || allowance === BigInt(0) || allowance < BigInt(Math.floor(depositAmount * 1e8))
-                    ? "Approve BTC"
                     : "Deposit BTC"
                   }
-                  {/* Debug info */}
-                  {depositAmount > 0 && (
-                    <div className="text-xs text-muted-foreground mt-1">
-                      Debug: Allowance={allowance?.toString() || 'undefined'}, Amount={BigInt(Math.floor(depositAmount * 1e8)).toString()}, NeedsApproval={!allowance || allowance < BigInt(Math.floor(depositAmount * 1e8)) ? 'Yes' : 'No'}
-                    </div>
-                  )}
                 </Button>
               )}
 
               {/* Transaction Status Messages */}
-              {approveError && (
-                <div className="p-3 bg-destructive/10 border border-destructive/20 rounded text-sm">
-                  <p className="text-destructive font-semibold mb-1">Approval Failed</p>
-                  <p className="text-destructive text-xs">{approveError.message}</p>
-                </div>
-              )}
-
               {depositError && (
                 <div className="p-3 bg-destructive/10 border border-destructive/20 rounded text-sm">
                   <p className="text-destructive font-semibold mb-1">Deposit Failed</p>
@@ -346,19 +328,12 @@ export default function TradePanel({
                 </div>
               )}
 
-              {isApproveConfirmed && (
-                <div className="p-3 bg-success/10 border border-success/20 rounded text-sm">
-                  <p className="text-success font-semibold mb-1">✓ Approval Successful</p>
-                  <p className="text-success text-xs">You can now deposit BTC to the vault</p>
-                </div>
-              )}
-
               {isDepositConfirmed && (
-                <div className="p-3 bg-success/10 border border-success/20 rounded text-sm">
-                  <p className="text-success font-semibold mb-1">✓ Deposit Successful</p>
-                  <p className="text-success text-xs">{lastDepositedAmount.toFixed(4)} BTC deposited to vault</p>
+                <div className="p-3 bg-primary/10 border border-primary/20 rounded text-sm">
+                  <p className="text-primary font-semibold mb-1">✓ Deposit Successful</p>
+                  <p className="text-primary text-xs">{lastDepositedAmount.toFixed(4)} BTC deposited to vault</p>
                   {depositHash && (
-                    <p className="text-success text-xs mt-1">
+                    <p className="text-primary text-xs mt-1">
                       TX: {depositHash.slice(0, 10)}...{depositHash.slice(-8)}
                     </p>
                   )}
@@ -504,11 +479,11 @@ export default function TradePanel({
               )}
 
               {isWithdrawConfirmed && (
-                <div className="p-3 bg-success/10 border border-success/20 rounded text-sm">
-                  <p className="text-success font-semibold mb-1">✓ Withdraw Successful</p>
-                  <p className="text-success text-xs">{lastWithdrawnAmount.toFixed(4)} BTC withdrawn from vault</p>
+                <div className="p-3 bg-primary/10 border border-primary/20 rounded text-sm">
+                  <p className="text-primary font-semibold mb-1">✓ Withdraw Successful</p>
+                  <p className="text-primary text-xs">{lastWithdrawnAmount.toFixed(4)} BTC withdrawn from vault</p>
                   {withdrawHash && (
-                    <p className="text-success text-xs mt-1">
+                    <p className="text-primary text-xs mt-1">
                       TX: {withdrawHash.slice(0, 10)}...{withdrawHash.slice(-8)}
                     </p>
                   )}
@@ -607,12 +582,10 @@ export default function TradePanel({
         <Button
           onClick={handleOpenPosition}
           disabled={!isValid || isPending}
-          className={`w-full py-3 rounded font-bold text-lg transition-colors ${
+          className={`w-full py-3 rounded font-bold text-lg transition-colors border-2 ${
             isValid && !isPending
-              ? tradeType === "long"
-                ? "bg-success hover:bg-success/90 text-background"
-                : "bg-destructive hover:bg-destructive/90 text-background"
-              : "bg-muted text-muted-foreground cursor-not-allowed"
+              ? "bg-primary hover:bg-primary/90 text-background border-primary"
+              : "bg-background text-primary border-primary opacity-50 cursor-not-allowed"
           }`}
         >
           {isPending ? "Opening Position..." : `Confirm ${tradeType === "long" ? "Long" : "Short"}`}
@@ -631,13 +604,13 @@ export default function TradePanel({
 
         {/* Open Position Success */}
         {isOpenPositionConfirmed && (
-          <div className="p-3 bg-success/10 border border-success/20 rounded text-sm">
-            <p className="text-success font-semibold mb-1">✓ Position Opened Successfully</p>
-            <p className="text-success text-xs">
+          <div className="p-3 bg-primary/10 border border-primary/20 rounded text-sm">
+            <p className="text-primary font-semibold mb-1">✓ Position Opened Successfully</p>
+            <p className="text-primary text-xs">
               {tradeType === "long" ? "Long" : "Short"} position opened with {leverage}x leverage
             </p>
             {openPositionHash && (
-              <p className="text-success text-xs mt-1">
+              <p className="text-primary text-xs mt-1">
                 TX: {openPositionHash.slice(0, 10)}...{openPositionHash.slice(-8)}
               </p>
             )}

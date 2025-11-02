@@ -436,10 +436,24 @@ contract TradingEngine is ReentrancyGuard, Ownable {
         uint256 price = _getOraclePrice18();
         if (position.isLong) {
             // PnL = (price - entryPrice) * size / entryPrice
-            return int256((price - position.entryPrice) * position.size / position.entryPrice);
+            // Handle both profit and loss cases to avoid underflow
+            if (price >= position.entryPrice) {
+                // Profit case: price >= entryPrice, safe to subtract
+                return int256((price - position.entryPrice) * position.size / position.entryPrice);
+            } else {
+                // Loss case: price < entryPrice, avoid underflow by calculating loss first
+                return -int256((position.entryPrice - price) * position.size / position.entryPrice);
+            }
         } else {
             // PnL = (entryPrice - price) * size / entryPrice
-            return int256((position.entryPrice - price) * position.size / position.entryPrice);
+            // Handle both profit and loss cases to avoid underflow
+            if (position.entryPrice >= price) {
+                // Profit case: entryPrice >= price, safe to subtract
+                return int256((position.entryPrice - price) * position.size / position.entryPrice);
+            } else {
+                // Loss case: entryPrice < price, avoid underflow by calculating loss first
+                return -int256((price - position.entryPrice) * position.size / position.entryPrice);
+            }
         }
     }
     

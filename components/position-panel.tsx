@@ -172,8 +172,8 @@ export default function PositionPanel({
               onClick={() => setActiveTab(tab)}
               className={`px-4 py-2 font-semibold text-sm uppercase tracking-wide transition-colors border-b-2 ${
                 activeTab === tab
-                  ? "text-primary border-primary"
-                  : "text-muted-foreground border-transparent hover:text-foreground"
+                  ? "text-primary border-primary bg-primary/10"
+                  : "text-muted-foreground border-transparent hover:text-primary hover:bg-primary/5"
               }`}
             >
               {tab === "positions" && "Positions"}
@@ -214,10 +214,10 @@ export default function PositionPanel({
                     <div>
                       <p className="text-muted-foreground text-xs uppercase tracking-wide">PnL</p>
                       <div className="mt-1">
-                        <p className={`font-bold text-lg animate-pulse-subtle ${pnlUsdNum >= 0 ? "text-success" : "text-destructive"}`}>
+                        <p className={`font-bold text-lg animate-pulse-subtle ${pnlUsdNum >= 0 ? "text-primary" : "text-destructive"}`}>
                           {pnlUsdNum >= 0 ? "+" : ""}${Math.abs(pnlUsdNum).toLocaleString("en-US", { maximumFractionDigits: 2 })}
                         </p>
-                        <p className={`text-xs ${pnlTbtcNum >= 0 ? "text-success" : "text-destructive"}`}>
+                        <p className={`text-xs ${pnlTbtcNum >= 0 ? "text-primary" : "text-destructive"}`}>
                           {pnlTbtcNum >= 0 ? "+" : ""}{Math.abs(pnlTbtcNum).toFixed(6)} tBTC
                         </p>
                       </div>
@@ -236,7 +236,7 @@ export default function PositionPanel({
                   <div className="bg-muted rounded p-3 border border-border">
                     <div className="flex items-center justify-between">
                       <p className="text-muted-foreground text-sm">Funding Payment</p>
-                      <p className={`font-semibold ${fundingPaymentValue >= 0 ? "text-success" : "text-destructive"}`}>
+                      <p className={`font-semibold ${fundingPaymentValue >= 0 ? "text-primary" : "text-destructive"}`}>
                         {fundingPaymentValue >= 0 ? "+" : ""}
                         {fundingPaymentValue.toFixed(4)} tBTC
                       </p>
@@ -315,12 +315,12 @@ export default function PositionPanel({
             {/* ROI Display - Only show if position exists */}
             {position?.exists && (
               <div
-                className={`rounded p-4 border ${pnlUsdNum >= 0 ? "bg-success-subtle border-success/30" : "bg-destructive-subtle border-destructive/30"}`}
+                className={`rounded p-4 border ${pnlUsdNum >= 0 ? "bg-primary/10 border-primary/30" : "bg-destructive-subtle border-destructive/30"}`}
               >
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-muted-foreground text-sm">Return on Investment</p>
-                    <p className={`text-2xl font-bold mt-1 ${pnlUsdNum >= 0 ? "text-success" : "text-destructive"}`}>
+                    <p className={`text-2xl font-bold mt-1 ${pnlUsdNum >= 0 ? "text-primary" : "text-destructive"}`}>
                       {roi >= 0 ? "+" : ""}
                       {roi.toFixed(2)}%
                     </p>
@@ -335,7 +335,7 @@ export default function PositionPanel({
                       <Button
                         onClick={handleLiquidate}
                         disabled={!canLiquidate}
-                        className="bg-orange-600 hover:bg-orange-700 text-background font-semibold"
+                        className="bg-primary hover:bg-primary/90 text-background font-semibold"
                       >
                         {isLiquidating ? "Liquidating..." : "Liquidate"}
                       </Button>
@@ -354,10 +354,10 @@ export default function PositionPanel({
 
             {/* Contract Paused Warning */}
             {isPaused && (
-              <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded text-sm">
-                <p className="text-yellow-600 font-semibold mb-1">⚠️ Trading Paused</p>
-                <p className="text-yellow-600 text-xs">Trading is currently paused. You cannot close positions at this time.</p>
-                <p className="text-yellow-600 text-xs mt-1">
+              <div className="p-3 bg-primary/10 border border-primary/20 rounded text-sm">
+                <p className="text-primary font-semibold mb-1">⚠️ Trading Paused</p>
+                <p className="text-primary text-xs">Trading is currently paused. You cannot close positions at this time.</p>
+                <p className="text-primary text-xs mt-1">
                   Please try again later when trading resumes.
                 </p>
               </div>
@@ -387,13 +387,13 @@ export default function PositionPanel({
 
             {/* Close Position Success */}
             {isClosePositionConfirmed && (
-              <div className="p-3 bg-success/10 border border-success/20 rounded text-sm">
-                <p className="text-success font-semibold mb-1">✓ Position Closed Successfully</p>
-                <p className="text-success text-xs">
+              <div className="p-3 bg-primary/10 border border-primary/20 rounded text-sm">
+                <p className="text-primary font-semibold mb-1">✓ Position Closed Successfully</p>
+                <p className="text-primary text-xs">
                   Position closed and margin returned to vault
                 </p>
                 {closePositionHash && (
-                  <p className="text-success text-xs mt-1">
+                  <p className="text-primary text-xs mt-1">
                     TX: {closePositionHash.slice(0, 10)}...{closePositionHash.slice(-8)}
                   </p>
                 )}
