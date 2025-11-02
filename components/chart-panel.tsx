@@ -43,8 +43,8 @@ export default function ChartPanel({
   const { refreshMarkPrice, isPending: isRefreshing, isConfirming: isRefreshConfirming, isConfirmed: isRefreshConfirmed, error: refreshError } = useTradingEngineRefreshMarkPrice()
   
   // Use real-time price if available, otherwise fallback to prop
-  const currentPrice = btcData?.price || fallbackPrice || 42000
-  const priceChange = btcData?.change_24h || ((currentPrice - 42000) / 42000) * 100
+  const currentPrice = btcData?.price || fallbackPrice 
+  const priceChange = btcData?.change_24h
   
   // Update price history for chart visualization
   useEffect(() => {
@@ -88,12 +88,14 @@ export default function ChartPanel({
               )}
             </div>
             <h2 className="text-4xl font-bold text-foreground mt-2">
-              ${currentPrice.toLocaleString("en-US", { maximumFractionDigits: 2 })}
+              ${currentPrice?.toLocaleString("en-US", { maximumFractionDigits: 2 })}
             </h2>
-            <p className={`text-sm mt-2 ${priceChange >= 0 ? "text-success" : "text-destructive"}`}>
-              {priceChange >= 0 ? "+" : ""}
-              {priceChange.toFixed(2)}% {btcData ? "24h" : "from $42,000"}
-            </p>
+            {priceChange !== undefined ? (
+              <p className={`text-sm mt-2 ${priceChange >= 0 ? "text-success" : "text-destructive"}`}>
+                {priceChange >= 0 ? "+" : ""}
+                {priceChange.toFixed(2)}% 24h
+              </p>
+            ) : null}
             {lastUpdated && (
               <p className="text-xs text-muted-foreground mt-1">
                 Updated {lastUpdated.toLocaleTimeString()}
@@ -199,7 +201,7 @@ export default function ChartPanel({
           <div className="bg-muted rounded p-3">
             <p className="text-muted-foreground text-xs uppercase tracking-wide">Index Price</p>
             <p className="text-foreground font-semibold mt-1">
-              ${currentPrice.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+              ${currentPrice?.toLocaleString("en-US", { maximumFractionDigits: 0 })}
             </p>
             {btcData && (
               <p className="text-xs text-muted-foreground mt-1">
@@ -210,7 +212,7 @@ export default function ChartPanel({
           <div className="bg-muted rounded p-3">
             <p className="text-muted-foreground text-xs uppercase tracking-wide">Mark Price</p>
             <p className="text-foreground font-semibold mt-1">
-              ${markPrice ? (Number(markPrice) / 1e18).toLocaleString("en-US", { maximumFractionDigits: 0 }) : (currentPrice + 50).toLocaleString("en-US", { maximumFractionDigits: 0 })}
+              ${markPrice ? (Number(markPrice) / 1e18).toLocaleString("en-US", { maximumFractionDigits: 0 }) : (currentPrice ? (currentPrice + 50).toLocaleString("en-US", { maximumFractionDigits: 0 }) : "N/A")}
             </p>
             {btcData && (
               <p className="text-xs text-muted-foreground mt-1">
@@ -223,7 +225,7 @@ export default function ChartPanel({
             <p className={`text-foreground font-semibold mt-1 ${isFundingDue ? "text-destructive" : ""}`}>
               {getNextFundingTime()}
             </p>
-            {btcData && (
+            {btcData && priceChange !== undefined && (
               <p className="text-xs text-muted-foreground mt-1">
                 Change: {priceChange >= 0 ? "+" : ""}{priceChange.toFixed(2)}%
               </p>

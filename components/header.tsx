@@ -42,10 +42,14 @@ export default function Header({ fundingRate, nextFundingTime, isFundingDue, pri
             </div>
             <div className="text-center">
               <p className="text-muted-foreground text-xs uppercase tracking-wide">24h Change</p>
-              <p className={`font-semibold ${(priceChange ?? 0) >= 0 ? "text-success" : "text-destructive"}`}>
-                {(priceChange ?? 0) >= 0 ? "+" : ""}
-                {(priceChange ?? 0).toFixed(2)}%
-              </p>
+              {priceChange !== undefined ? (
+                <p className={`font-semibold ${priceChange >= 0 ? "text-success" : "text-destructive"}`}>
+                  {priceChange >= 0 ? "+" : ""}
+                  {priceChange.toFixed(2)}%
+                </p>
+              ) : (
+                <p className="font-semibold text-muted-foreground">N/A</p>
+              )}
             </div>
             <div className="text-center">
               <p className="text-muted-foreground text-xs uppercase tracking-wide">Funding Rate</p>

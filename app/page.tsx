@@ -143,9 +143,8 @@ export default function Home() {
     }
   }
   
-  // Calculate price change for header (using real-time price)
-  const basePrice = 42000 // Reference price for change calculation
-  const priceChange = ((realTimePrice - basePrice) / basePrice) * 100
+  // Calculate price change for header - only use actual 24h change from API
+  const priceChange = btcPriceData?.change_24h ?? undefined
   
   // Funding for current position (grouped hook)
   const { fundingPayment: fundingPaymentQuery } = useFundingRateForPosition(
