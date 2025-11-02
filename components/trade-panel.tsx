@@ -99,8 +99,11 @@ export default function TradePanel({
   const tradingFeeRate = tradingFee ? Number(tradingFee) / 1e18 : 0.001
 
   const positionSize = margin * leverage
+  // Liquidation price calculation matches contract: (10000 - 7060) / (leverage * 10000) = 2940/200000 = 0.0147 for 20x
+  // This gives ~1.47% price drop, resulting in liquidation at ~$109k from $110,626 entry
+  // Frontend formula: (1 / leverage) * multiplier where multiplier = (10000 - MAINTENANCE_MARGIN_RATIO) / 10000 = 0.294
   const liquidationPrice =
-    tradeType === "long" ? price * (1 - (1 / leverage) * 0.95) : price * (1 + (1 / leverage) * 0.95)
+    tradeType === "long" ? price * (1 - (1 / leverage) * 0.294) : price * (1 + (1 / leverage) * 0.294)
   const calculatedTradingFee = positionSize * tradingFeeRate
 
   // Check if position is truly active (not just exists flag, but also has size/margin)

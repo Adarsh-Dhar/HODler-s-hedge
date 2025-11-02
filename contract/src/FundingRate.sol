@@ -3,6 +3,10 @@ pragma solidity ^0.8.13;
 
 import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 
+interface ITradingEngine {
+    function getOpenInterestImbalance() external view returns (uint256 longOI, uint256 shortOI, int256 imbalance);
+}
+
 contract FundingRate is Ownable {
     // Funding rate in basis points (e.g., 10 = 0.001%)
     int256 public fundingRate;
@@ -16,9 +20,14 @@ contract FundingRate is Ownable {
     // Reference to TradingEngine
     address public tradingEngine;
     
+    // Maximum funding rate in basis points (e.g., 100 = 0.01% per interval)
+    // This caps the funding rate to prevent excessive rates
+    uint256 public maxFundingRateBps = 100; // Default 0.01% per 8-hour interval
+    
     // Events
     event FundingRateUpdated(int256 oldRate, int256 newRate, uint256 timestamp);
     event TradingEngineUpdated(address indexed oldEngine, address indexed newEngine);
+    event MaxFundingRateUpdated(uint256 oldMax, uint256 newMax);
     
     constructor() Ownable(msg.sender) {
         lastUpdateTime = block.timestamp;
@@ -40,6 +49,12 @@ contract FundingRate is Ownable {
         emit TradingEngineUpdated(oldEngine, _tradingEngine);
     }
     
+    function setMaxFundingRateBps(uint256 _maxFundingRateBps) external onlyOwner {
+        uint256 oldMax = maxFundingRateBps;
+        maxFundingRateBps = _maxFundingRateBps;
+        emit MaxFundingRateUpdated(oldMax, _maxFundingRateBps);
+    }
+    
     function updateFundingRate(int256 newRate) external onlyOwner {
         int256 oldRate = fundingRate;
         fundingRate = newRate;
@@ -50,6 +65,37 @@ contract FundingRate is Ownable {
     
     function getFundingRate() external view returns (int256) {
         return fundingRate;
+    }
+    
+    // Automatic funding rate calculation based on long/short imbalance
+    function calculateFundingRateFromImbalance() external view returns (int256) {
+        require(tradingEngine != address(0), "FundingRate: TradingEngine not set");
+        
+        ITradingEngine engine = ITradingEngine(tradingEngine);
+        (uint256 longOI, uint256 shortOI, int256 imbalance) = engine.getOpenInterestImbalance();
+        
+        uint256 totalOI = longOI + shortOI;
+        if (totalOI == 0) {
+            return 0; // No positions, no funding rate
+        }
+        
+        // Calculate funding rate: (imbalance / totalOI) * maxFundingRate
+        // Positive imbalance (more longs) = positive rate (longs pay shorts)
+        // Negative imbalance (more shorts) = negative rate (shorts pay longs)
+        int256 rate = (imbalance * int256(maxFundingRateBps)) / int256(totalOI);
+        
+        return rate;
+    }
+    
+    // Function to automatically update funding rate from imbalance
+    // Can be called by anyone (keeper bot) or TradingEngine when funding is due
+    function updateFundingRateFromImbalance() external {
+        int256 newRate = this.calculateFundingRateFromImbalance();
+        int256 oldRate = fundingRate;
+        fundingRate = newRate;
+        lastUpdateTime = block.timestamp;
+        
+        emit FundingRateUpdated(oldRate, newRate, block.timestamp);
     }
     
     function calculateFundingPayment(uint256 positionSize, bool isLong) external view returns (int256) {

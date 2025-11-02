@@ -4,6 +4,7 @@ import { useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
+import TradeHistory from "@/components/trade-history"
 
 interface PositionPanelProps {
   position?: {
@@ -421,15 +422,7 @@ export default function PositionPanel({
 
         {/* History Tab */}
         {activeTab === "history" && (
-          <div className="text-center py-8">
-            <p className="text-muted-foreground">No trade history available</p>
-            <p className="text-muted-foreground text-sm mt-2">Trade history tracking is coming soon</p>
-            <div className="mt-4 p-3 bg-muted/50 rounded border border-border">
-              <p className="text-muted-foreground text-xs">
-                💡 Historical trade data will be displayed here once the feature is implemented
-              </p>
-            </div>
-          </div>
+          <TradeHistory />
         )}
       </div>
     </Card>

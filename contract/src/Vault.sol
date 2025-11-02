@@ -35,6 +35,7 @@ contract Vault is ReentrancyGuard, Ownable {
     event AutoSettleUpdated(bool oldValue, bool newValue);
     event MusdDeposited(address indexed from, uint256 amount);
     event MusdWithdrawn(address indexed to, uint256 amount);
+    event BadDebtSettled(address indexed user, uint256 badDebtAmountMusd);
     
     constructor(address _tbtc) Ownable(msg.sender) {
         require(_tbtc != address(0), "Vault: Invalid TBTC address");
@@ -261,9 +262,20 @@ contract Vault is ReentrancyGuard, Ownable {
         address liquidator,
         uint256 liquidatorRewardMusd,
         address insuranceFund,
-        uint256 insuranceDepositMusd
+        uint256 insuranceDepositMusd,
+        uint256 badDebtAmountMusd
     ) external onlyTradingEngine {
         require(tbtcMargin > 0, "Vault: Invalid margin");
+
+        // Handle bad debt scenario
+        if (badDebtAmountMusd > 0) {
+            // Bad debt occurred - no funds to distribute to user/liquidator
+            // Insurance Fund coverage (if any) was already transferred to Vault by InsuranceFund.coverBadDebt()
+            // The transferred MUSD remains in Vault's balance and can be used to cover the negative balance
+            emit BadDebtSettled(user, badDebtAmountMusd);
+            emit MarginUnlocked(user, tbtcMargin, totalPnl);
+            return;
+        }
 
         // Calculate remaining in tBTC terms to ensure consistency with TradingEngine computation
         // forge-lint: disable-next-line(unsafe-typecast)
