@@ -5,7 +5,7 @@
   "description": "Automated liquidation bot for Hodlers Hedge TradingEngine",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && mkdir -p public && echo 'Node.js service - not for web deployment' > public/index.html",
     "start": "tsx src/index.ts",
     "dev": "tsx watch src/index.ts",
     "test": "tsx src/test.ts"

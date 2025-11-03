@@ -1,0 +1,8 @@
+# Ignore liquidation-bot - it's a Node.js service, not a web app
+liquidation-bot/
+
+# Ignore contract files
+contract/
+
+# Ignore other non-web directories
+scripts/
