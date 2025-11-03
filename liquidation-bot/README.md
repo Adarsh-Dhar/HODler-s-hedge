@@ -4,18 +4,20 @@ Automated liquidation bot for Hodlers Hedge TradingEngine that monitors all posi
 
 ## Features
 
-- **Real-time Position Tracking**: Listens to contract events to track all active positions
-- **Automatic Detection**: Uses the contract's `isLiquidatable()` function (no AI needed)
-- **Fast Execution**: Executes liquidations within seconds of detection
-- **Error Handling**: Gracefully handles race conditions, network errors, and gas issues
-- **Position Backfill**: Rebuilds position list from historical events on startup
-- **Gas Management**: Optional gas price limits to prevent overpaying
+- **Real-time Position Tracking**: Listens to contract events (`PositionOpened`, `PositionClosed`, `Liquidated`) to track all active positions
+- **Automatic Detection**: Uses the contract's `isLiquidatable()` function for reliable liquidation detection
+- **Fast Execution**: Executes liquidations within seconds of detection with sequential processing to avoid race conditions
+- **Robust Error Handling**: Gracefully handles race conditions, network errors, gas issues, and position state changes
+- **Position Backfill**: Rebuilds position list from historical events on startup (configurable block range)
+- **Gas Management**: Optional gas price limits to prevent overpaying during network congestion
+- **Shared Configuration**: Automatically syncs with frontend using shared contract addresses and ABIs from `lib/` directory
 
 ## Prerequisites
 
-- Node.js 20+ 
-- A wallet with BTC balance for gas fees (Mezo Testnet)
-- Private key for the liquidator wallet
+- **Node.js 20+** (recommended: Node.js 20.x or higher)
+- **Package Manager**: npm, pnpm, or yarn
+- **Wallet**: A wallet with BTC balance for gas fees on Mezo Testnet
+- **Private Key**: Private key for the liquidator wallet (never use your main wallet)
 
 ## Setup
 
@@ -23,6 +25,8 @@ Automated liquidation bot for Hodlers Hedge TradingEngine that monitors all posi
    ```bash
    cd liquidation-bot
    npm install
+   # or
+   pnpm install
    ```
 
 2. **Configure environment**:
@@ -30,9 +34,9 @@ Automated liquidation bot for Hodlers Hedge TradingEngine that monitors all posi
    cp env.example .env
    ```
 
-3. **Edit `.env` file**:
+3. **Edit `.env` file** with your configuration:
    ```env
-   # Required: Your liquidator wallet private key
+   # Required: Your liquidator wallet private key (0x-prefixed, 66 chars)
    LIQUIDATOR_PRIVATE_KEY=0x...
    
    # Optional overrides (defaults shown)
@@ -44,138 +48,328 @@ Automated liquidation bot for Hodlers Hedge TradingEngine that monitors all posi
    BACKFILL_BLOCK_RANGE=6000
    ```
 
+   **Note**: The `TRADING_ENGINE_ADDRESS` is automatically loaded from `lib/address.ts` if not set. Only override if using a different deployment.
+
 4. **Fund your liquidator wallet**:
    - The wallet needs BTC (Mezo Testnet) for gas fees
-   - Get testnet BTC from Mezo Testnet faucet
+   - Get testnet BTC from the [Mezo Testnet faucet](https://faucet.test.mezo.org) (if available)
+   - The bot will display a warning if the wallet balance is 0
 
 ## Running the Bot
 
 ### Development Mode (with auto-reload):
 ```bash
 npm run dev
+# or
+pnpm dev
 ```
 
 ### Production Mode:
 ```bash
 npm start
+# or
+pnpm start
 ```
 
-### Build and Run:
+### Build and Run (TypeScript):
 ```bash
 npm run build
 node dist/index.js
 ```
 
+### Test Script:
+```bash
+npm test
+# or
+pnpm test
+```
+
 ## How It Works
 
-1. **Startup**: 
-   - Loads configuration from environment variables
-   - Connects to Mezo Testnet via RPC
-   - Backfills active positions from historical events (last ~7 days)
+### Startup Sequence
 
-2. **Event Listening**:
-   - Watches `PositionOpened` events → adds to tracking
-   - Watches `PositionClosed` events → removes from tracking
-   - Watches `Liquidated` events → removes from tracking
+1. **Configuration Loading**:
+   - Loads environment variables from `.env` file
+   - Validates required configuration (private key, addresses, etc.)
+   - Automatically imports contract address from `lib/address.ts` (if not overridden)
+   - Automatically imports contract ABI from `lib/abi/TradingEngine.ts`
 
-3. **Monitoring Loop** (every 15 seconds by default):
-   - Checks all tracked positions with `isLiquidatable()`
-   - Queues positions that are liquidatable
-   - Executes liquidations sequentially with small delays
+2. **Network Connection**:
+   - Creates viem `PublicClient` and `WalletClient` for Mezo Testnet
+   - Displays wallet address and balance (warns if balance is 0)
+   - Connects to RPC endpoint (default: `https://rpc.test.mezo.org`)
 
-4. **Liquidation Execution**:
-   - Calls `liquidate(userAddress)` on the TradingEngine contract
-   - Waits for transaction confirmation
-   - Parses reward from `Liquidated` event
-   - Removes position from tracking on success
+3. **Position Backfill**:
+   - Fetches historical events from the last `BACKFILL_BLOCK_RANGE` blocks (~7 days by default)
+   - Processes `PositionOpened`, `PositionClosed`, and `Liquidated` events
+   - Rebuilds the active position list from historical data
+   - Logs the number of active positions found
+
+### Runtime Operation
+
+4. **Event Listeners** (Real-time):
+   - **`PositionOpened`**: Adds new position addresses to the tracking set
+   - **`PositionClosed`**: Removes closed position addresses from tracking
+   - **`Liquidated`**: Removes liquidated positions (whether by this bot or another)
+
+5. **Monitoring Loop** (every `MONITOR_INTERVAL_MS` ms, default 15s):
+   - Retrieves all active positions from the tracker
+   - For each position:
+     - Verifies position still exists via `getPosition()` call
+     - Checks liquidation status via `isLiquidatable()` call
+   - Batches checks (up to 10 positions at a time) for efficiency
+   - Queues liquidatable positions for execution
+
+6. **Liquidation Execution**:
+   - For each liquidatable position:
+     - Checks gas price against `MAX_GAS_PRICE_GWEI` limit (if set)
+     - Calls `liquidate(userAddress)` on TradingEngine contract
+     - Waits for transaction receipt (2 minute timeout)
+     - Parses `Liquidated` event to extract reward amount
+     - Removes position from tracking on success
+     - Handles errors gracefully (race conditions, position changes, etc.)
+   - Adds 1 second delay between liquidations to avoid congestion
+
+### Graceful Shutdown
+
+- Handles `SIGINT` (Ctrl+C) and `SIGTERM` signals
+- Stops event listeners and monitoring loop cleanly
+- Exits gracefully with status messages
 
 ## Configuration Options
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `LIQUIDATOR_PRIVATE_KEY` | Private key of liquidator wallet | Required |
-| `RPC_URL` | RPC endpoint URL | `https://rpc.test.mezo.org` |
-| `TRADING_ENGINE_ADDRESS` | TradingEngine contract address | Imported from `lib/address.ts` |
-| `MONITOR_INTERVAL_MS` | How often to check positions (ms) | `15000` (15s) |
-| `CHAIN_ID` | Network chain ID | `31611` |
-| `MAX_GAS_PRICE_GWEI` | Max gas price limit (0 = no limit) | `0` |
-| `BACKFILL_BLOCK_RANGE` | Blocks to look back for events | `6000` (~7 days) |
+| Variable | Required | Description | Default |
+|----------|----------|-------------|---------|
+| `LIQUIDATOR_PRIVATE_KEY` | ✅ Yes | Private key of liquidator wallet (0x-prefixed, 66 chars) | - |
+| `RPC_URL` | ❌ No | RPC endpoint URL for Mezo Testnet | `https://rpc.test.mezo.org` |
+| `TRADING_ENGINE_ADDRESS` | ❌ No | TradingEngine contract address | Auto-imported from `lib/address.ts` |
+| `MONITOR_INTERVAL_MS` | ❌ No | How often to check positions for liquidation (milliseconds) | `15000` (15 seconds) |
+| `CHAIN_ID` | ❌ No | Network chain ID (Mezo Testnet) | `31611` |
+| `MAX_GAS_PRICE_GWEI` | ❌ No | Maximum gas price in gwei (0 = no limit) | `0` (no limit) |
+| `BACKFILL_BLOCK_RANGE` | ❌ No | Number of blocks to look back for position backfill | `6000` (~7 days) |
 
 ### Shared Configuration
 
-The bot automatically imports contract addresses and ABIs from the shared `lib/` directory:
-- **Contract Address**: Imported from `lib/address.ts` (same source as frontend)
-- **Contract ABI**: Imported from `lib/abi/TradingEngine.ts` (same source as frontend)
+The bot automatically imports contract addresses and ABIs from the shared `lib/` directory at the repository root:
 
-This ensures:
-- ✅ The bot always uses the same contract address as the frontend
-- ✅ The bot always uses the same ABI as the frontend
-- ✅ No manual synchronization needed when contracts are updated
+- **Contract Address**: Automatically read from `../../lib/address.ts` at runtime
+  - Parses the exported `tradingEngineAddress` constant
+  - Falls back to default if file read fails
+  - Can be overridden with `TRADING_ENGINE_ADDRESS` env var
 
-To override the default address, set the `TRADING_ENGINE_ADDRESS` environment variable.
+- **Contract ABI**: Automatically read from `../../lib/abi/TradingEngine.ts` at runtime
+  - Parses the exported `TradingEngineABI` constant
+  - Falls back to minimal ABI if file read fails
 
-## Monitoring
+**Benefits**:
+- ✅ Always synchronized with frontend - no manual updates needed
+- ✅ Same contract address and ABI across all parts of the application
+- ✅ Automatic updates when contracts are redeployed (just update `lib/address.ts`)
 
-The bot logs key events:
-- `📈` New position opened
-- `✅` Position closed
-- `⚡` Position liquidated
-- `🔍` Checking positions
-- `💰` Liquidation reward received
-- `❌` Errors and warnings
+**Overriding the Address**:
+Set the `TRADING_ENGINE_ADDRESS` environment variable to override the auto-imported address. This is useful for:
+- Testing against different deployments
+- Using a local test contract
+- Quick configuration without modifying shared files
+
+## Monitoring & Logging
+
+The bot provides detailed console logging with emoji indicators for easy identification:
+
+### Event Logs
+- `📈` **New position opened** - A new position was detected via event listener
+- `✅` **Position closed** - A position was closed normally
+- `⚡` **Position liquidated** - A position was liquidated (by this bot or another)
+- `🔍` **Checking positions** - Monitoring loop is checking active positions
+- `💰` **Liquidation reward received** - Successfully liquidated and received reward
+- `⚠️` **Warnings** - Non-fatal issues (race conditions, position state changes, etc.)
+- `❌` **Errors** - Fatal errors requiring attention
+
+### Startup Logs
+- Configuration summary (RPC URL, contract address, chain ID, etc.)
+- Liquidator wallet address and balance check
+- Backfill progress and results
+- Active position count after backfill
+
+### Runtime Logs
+- Periodic position checks (logs every minute when no positions)
+- Liquidation attempts with transaction hashes
+- Success/failure status for each liquidation
+- Transaction confirmations and reward parsing
+
+### Example Output
+```
+🤖 Liquidation Bot Starting...
+==================================================
+📋 Bot Configuration:
+   RPC URL: https://rpc.test.mezo.org
+   Trading Engine: 0x304B0E3DFC3701F5907dcb955E93a9D7c8b78b7F
+   Chain ID: 31611
+   Monitor Interval: 15000ms
+   Backfill Range: 6000 blocks
+   Liquidator Address: 0x1234...
+👛 Liquidator Address: 0x1234...
+==================================================
+💰 Wallet Balance: 0.5 BTC
+📚 Backfilling positions from historical events...
+📊 Backfilled 3 active positions
+🔍 Starting event listeners...
+🔄 Starting monitoring loop (interval: 15000ms)
+✅ Bot is running! Press Ctrl+C to stop.
+```
 
 ## Troubleshooting
 
-### "Missing required environment variable"
-- Ensure `.env` file exists with all required variables
-- Check that `LIQUIDATOR_PRIVATE_KEY` is set correctly
+### Configuration Issues
 
-### "Insufficient funds for gas"
-- Fund the liquidator wallet with BTC (Mezo Testnet)
-- Check balance: The wallet needs BTC for transaction gas fees
+**"Missing required environment variable"**
+- ✅ Ensure `.env` file exists in the `liquidation-bot/` directory
+- ✅ Check that `LIQUIDATOR_PRIVATE_KEY` is set and properly formatted (0x-prefixed, 66 chars)
+- ✅ Verify the private key is not empty or commented out
 
-### "Position not liquidatable" (during execution)
-- This is normal - may be a race condition where another bot liquidated first
-- The position will be automatically removed from tracking
+**"Invalid private key format"**
+- ✅ Private key must start with `0x` and be exactly 66 characters long
+- ✅ Ensure there are no extra spaces or newlines in the `.env` file
 
-### Bot not detecting positions
-- Check RPC connection: Ensure `RPC_URL` is correct and accessible
-- Verify contract address matches deployed contract
-- Check that events are being emitted (use block explorer)
+**"Invalid address format"**
+- ✅ Contract address must start with `0x` and be exactly 42 characters long
+- ✅ Verify `TRADING_ENGINE_ADDRESS` if manually set
 
-### High gas prices
-- Set `MAX_GAS_PRICE_GWEI` to limit gas spending
-- Monitor gas prices during network congestion
+### Funding Issues
+
+**"Insufficient funds for gas" / Wallet balance is 0**
+- ✅ Fund the liquidator wallet with BTC on Mezo Testnet
+- ✅ Check wallet balance on [Mezo Testnet Explorer](https://explorer.test.mezo.org)
+- ✅ Obtain testnet BTC from faucet (if available)
+- ✅ The bot requires BTC for transaction gas fees (not MUSD)
+
+### Execution Issues
+
+**"Position not liquidatable" (during execution)**
+- ℹ️ This is normal and indicates a race condition
+- ✅ Another bot or user may have liquidated the position first
+- ✅ The position is automatically removed from tracking
+- ✅ No action needed - the bot will continue monitoring
+
+**"Gas price too high"**
+- ✅ The current gas price exceeds `MAX_GAS_PRICE_GWEI` limit
+- ✅ Increase `MAX_GAS_PRICE_GWEI` or set to `0` for no limit
+- ✅ Wait for network congestion to subside
+
+### Connection Issues
+
+**Bot not detecting positions**
+- ✅ Check RPC connection: Verify `RPC_URL` is correct and accessible
+- ✅ Test RPC endpoint manually: `curl https://rpc.test.mezo.org`
+- ✅ Verify contract address matches deployed contract
+- ✅ Check that events are being emitted (use [block explorer](https://explorer.test.mezo.org))
+- ✅ Increase `BACKFILL_BLOCK_RANGE` if positions were opened long ago
+
+**Network timeouts or RPC errors**
+- ✅ Check internet connection
+- ✅ Verify RPC endpoint is not rate-limited
+- ✅ Consider using a different RPC provider
+- ✅ Check Mezo Testnet status
+
+### Performance Issues
+
+**High gas prices**
+- ✅ Set `MAX_GAS_PRICE_GWEI` to limit spending (e.g., `MAX_GAS_PRICE_GWEI=100`)
+- ✅ Monitor gas prices during network congestion
+- ✅ The bot will skip liquidations if gas exceeds limit
+
+**Slow position detection**
+- ✅ Reduce `MONITOR_INTERVAL_MS` for faster checks (minimum ~5 seconds recommended)
+- ✅ Note: More frequent checks = more RPC calls = potentially higher costs
+- ✅ Default 15 seconds is a good balance
+
+**Backfill taking too long**
+- ✅ Reduce `BACKFILL_BLOCK_RANGE` for faster startup
+- ✅ Trade-off: May miss older positions (they'll be detected via events)
+- ✅ Default 6000 blocks (~7 days) is recommended
 
 ## Security Notes
 
-- **Never commit `.env` file** - It contains your private key
-- **Use a dedicated wallet** - Don't use your main wallet's private key
-- **Keep private key secure** - Store in environment variables or secure key management
-- **Test on testnet first** - Verify everything works before using real funds
+⚠️ **CRITICAL SECURITY GUIDELINES**
+
+- **Never commit `.env` file** - It contains your private key and must be in `.gitignore`
+- **Use a dedicated wallet** - Never use your main wallet's private key for the bot
+- **Keep private key secure**:
+  - Store only in environment variables or secure key management systems
+  - Never log or print private keys in code
+  - Use secrets management for production (AWS Secrets Manager, HashiCorp Vault, etc.)
+- **Test on testnet first** - Always verify everything works on testnet before using real funds
+- **Monitor wallet balance** - Regularly check that the liquidator wallet has sufficient funds
+- **Review transaction logs** - Regularly audit liquidation transactions for unexpected behavior
+- **Limit gas spending** - Set `MAX_GAS_PRICE_GWEI` to prevent unexpected high costs
+- **Run in secure environment** - Deploy bot on secure servers with proper access controls
 
 ## Architecture
 
+### System Flow
+
 ```
-┌─────────────────┐
-│  Event Listener │ ──> PositionOpened/Closed/Liquidated
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Position Tracker│ ──> In-memory set of active positions
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Monitor Loop    │ ──> Every 15s, check isLiquidatable()
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Liquidation Exec│ ──> Call liquidate() when needed
-└─────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                    Startup & Initialization                   │
+│  • Load config from .env                                     │
+│  • Import contract address & ABI from lib/                   │
+│  • Create viem clients (PublicClient, WalletClient)          │
+│  • Check wallet balance                                      │
+│  • Backfill positions from historical events                 │
+└───────────────────────┬─────────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      Runtime Components                       │
+└─────────────────────────────────────────────────────────────┘
+                        │
+        ┌───────────────┴───────────────┐
+        │                               │
+        ▼                               ▼
+┌──────────────────┐         ┌──────────────────┐
+│ Event Listeners  │         │  Monitor Service │
+│ (Real-time)      │         │  (Periodic)      │
+│                  │         │                  │
+│ • PositionOpened │         │ • Check every    │
+│ • PositionClosed │         │   15s (default)  │
+│ • Liquidated     │         │ • Batch checks   │
+└────────┬─────────┘         │   (10 at a time) │
+         │                   └──────────┬───────┘
+         │                              │
+         │                              │
+         └──────────┬───────────────────┘
+                    │
+                    ▼
+         ┌──────────────────┐
+         │ Position Tracker │
+         │                  │
+         │ • In-memory Set  │
+         │ • Add/Remove     │
+         │ • Get Active     │
+         └────────┬─────────┘
+                  │
+                  ▼
+         ┌──────────────────┐
+         │ Liquidation Exec │
+         │                  │
+         │ • Check gas      │
+         │ • Execute tx     │
+         │ • Parse reward   │
+         │ • Remove pos.    │
+         └──────────────────┘
 ```
+
+### Component Responsibilities
+
+| Component | File | Responsibility |
+|-----------|------|----------------|
+| **Main Entry** | `index.ts` | Orchestrates startup, creates services, handles shutdown |
+| **Configuration** | `config.ts` | Loads and validates environment variables, imports shared config |
+| **Clients** | `clients.ts` | Sets up viem PublicClient and WalletClient, loads ABIs |
+| **Events** | `events.ts` | Manages event listeners and position backfill logic |
+| **Monitor** | `monitor.ts` | Periodic checking loop for liquidatable positions |
+| **Liquidation** | `liquidation.ts` | Executes liquidation transactions and handles results |
+| **Types** | `types.ts` | TypeScript type definitions |
 
 ## Development
 
@@ -183,23 +377,76 @@ The bot logs key events:
 ```
 liquidation-bot/
 ├── src/
-│   ├── index.ts          # Main entry point
-│   ├── config.ts          # Environment configuration
-│   ├── clients.ts         # viem client setup
-│   ├── events.ts          # Event listeners & backfill
-│   ├── monitor.ts         # Monitoring loop
-│   ├── liquidation.ts     # Liquidation execution
-│   └── types.ts           # TypeScript types
-├── package.json
-├── tsconfig.json
-└── README.md
+│   ├── index.ts           # Main entry point & orchestration
+│   ├── config.ts          # Environment configuration & validation
+│   ├── clients.ts         # viem client setup & ABI loading
+│   ├── events.ts          # Event listeners & position backfill
+│   ├── monitor.ts         # Monitoring loop service
+│   ├── liquidation.ts    # Liquidation execution service
+│   ├── types.ts          # TypeScript type definitions
+│   └── test.ts           # Test utilities (optional)
+├── package.json          # Dependencies & scripts
+├── tsconfig.json         # TypeScript configuration
+├── env.example           # Example environment file
+└── README.md            # This file
 ```
 
+### Technology Stack
+
+- **TypeScript**: Type-safe development
+- **viem**: Ethereum client library (v2.x)
+- **dotenv**: Environment variable management
+- **tsx**: TypeScript execution for development
+
+### Development Workflow
+
+1. **Make changes** to source files in `src/`
+2. **Test locally** with `npm run dev` (auto-reloads on changes)
+3. **Build** with `npm run build` to check for TypeScript errors
+4. **Run tests** with `npm test` (if test suite exists)
+
 ### Adding Features
-- Extend `PositionTracker` for persistent storage (database)
-- Add Discord/Slack notifications for liquidations
-- Implement gas price optimization strategies
-- Add metrics and monitoring dashboards
+
+#### Persistent Storage
+- Extend `PositionTracker` in `events.ts` to use a database (PostgreSQL, MongoDB, etc.)
+- Store position history for analytics
+- Enable bot restart without backfill
+
+#### Notifications
+- Add Discord/Slack webhook integration
+- Send alerts for:
+  - Successful liquidations with reward amounts
+  - Failed liquidation attempts
+  - Wallet balance warnings
+  - Bot health status
+
+#### Gas Optimization
+- Implement dynamic gas price strategies:
+  - EIP-1559 fee estimation
+  - Gas price bidding algorithms
+  - Transaction speed optimization
+
+#### Monitoring & Metrics
+- Add metrics collection (Prometheus, StatsD, etc.)
+- Track:
+  - Liquidation success rate
+  - Average time to liquidate
+  - Gas costs per liquidation
+  - Position count over time
+- Create dashboards (Grafana, etc.)
+
+#### Error Recovery
+- Add retry logic with exponential backoff
+- Implement circuit breakers for RPC failures
+- Add health check endpoints for monitoring services
+
+### Code Style
+
+- Use TypeScript strict mode
+- Follow functional programming patterns where appropriate
+- Use async/await for all async operations
+- Include JSDoc comments for public functions
+- Use descriptive variable and function names
 
 ## License
 
