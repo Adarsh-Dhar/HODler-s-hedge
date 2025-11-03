@@ -1,5 +1,8 @@
 "use client"
 
+// Force dynamic rendering to prevent static generation issues with wagmi
+export const dynamic = 'force-dynamic'
+
 import { useAccount } from "wagmi"
 import { useIsVaultOwner } from "@/hooks"
 import AdminPanel from "@/components/admin/admin-panel"

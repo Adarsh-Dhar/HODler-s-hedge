@@ -1,6 +1,9 @@
 "use client"
 
 import { useState, useEffect } from "react"
+
+// Force dynamic rendering to prevent static generation issues with wagmi
+export const dynamic = 'force-dynamic'
 import { useAccount, useReadContract } from "wagmi"
 import { vaultAddress, fundingRateAddress, tradingEngineAddress, tBTCAddress } from "@/lib/address"
 import { VaultABI } from "@/lib/abi/Vault"
