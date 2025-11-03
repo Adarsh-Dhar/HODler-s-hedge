@@ -6,10 +6,10 @@ export interface BotConfig {
   liquidatorPrivateKey: `0x${string}`
   rpcUrl: string
   tradingEngineAddress: `0x${string}`
-  monitorIntervalMs: number
   chainId: number
   maxGasPriceGwei?: number
   backfillBlockRange: number
+  monitorIntervalMs?: number // Optional: only used in traditional server mode
 }
 
 export interface Position {

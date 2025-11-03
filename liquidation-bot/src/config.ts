@@ -78,7 +78,6 @@ export function loadConfig(): BotConfig {
 
   const rpcUrl = getEnvVar('RPC_URL', 'https://rpc.test.mezo.org')
   const chainId = getEnvNumber('CHAIN_ID', 31611)
-  const monitorIntervalMs = getEnvNumber('MONITOR_INTERVAL_MS', 15000)
   const maxGasPriceGwei = process.env.MAX_GAS_PRICE_GWEI
     ? parseInt(process.env.MAX_GAS_PRICE_GWEI, 10)
     : undefined
@@ -88,7 +87,6 @@ export function loadConfig(): BotConfig {
     liquidatorPrivateKey: privateKey,
     rpcUrl,
     tradingEngineAddress: contractAddress as `0x${string}`,
-    monitorIntervalMs,
     chainId,
     maxGasPriceGwei,
     backfillBlockRange,
@@ -100,7 +98,6 @@ export function logConfig(config: BotConfig): void {
   console.log(`   RPC URL: ${config.rpcUrl}`)
   console.log(`   Trading Engine: ${config.tradingEngineAddress}`)
   console.log(`   Chain ID: ${config.chainId}`)
-  console.log(`   Monitor Interval: ${config.monitorIntervalMs}ms`)
   console.log(`   Backfill Range: ${config.backfillBlockRange} blocks`)
   if (config.maxGasPriceGwei) {
     console.log(`   Max Gas Price: ${config.maxGasPriceGwei} gwei`)

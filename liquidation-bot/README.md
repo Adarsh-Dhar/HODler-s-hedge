@@ -4,11 +4,12 @@ Automated liquidation bot for Hodlers Hedge TradingEngine that monitors all posi
 
 ## Features
 
-- **Real-time Position Tracking**: Listens to contract events (`PositionOpened`, `PositionClosed`, `Liquidated`) to track all active positions
+- **Dual Deployment Modes**: Supports both traditional long-running server and Vercel serverless cron deployment
+- **Persistent Position Tracking**: Uses Vercel KV storage (serverless) or in-memory tracking (traditional server)
 - **Automatic Detection**: Uses the contract's `isLiquidatable()` function for reliable liquidation detection
-- **Fast Execution**: Executes liquidations within seconds of detection with sequential processing to avoid race conditions
+- **Fast Execution**: Executes liquidations with sequential processing to avoid race conditions
 - **Robust Error Handling**: Gracefully handles race conditions, network errors, gas issues, and position state changes
-- **Position Backfill**: Rebuilds position list from historical events on startup (configurable block range)
+- **Position Backfill**: Rebuilds position list from historical events with incremental backfill support
 - **Gas Management**: Optional gas price limits to prevent overpaying during network congestion
 - **Shared Configuration**: Automatically syncs with frontend using shared contract addresses and ABIs from `lib/` directory
 
@@ -42,11 +43,12 @@ Automated liquidation bot for Hodlers Hedge TradingEngine that monitors all posi
    # Optional overrides (defaults shown)
    RPC_URL=https://rpc.test.mezo.org
    TRADING_ENGINE_ADDRESS=0x304B0E3DFC3701F5907dcb955E93a9D7c8b78b7F
-   MONITOR_INTERVAL_MS=15000
    CHAIN_ID=31611
    MAX_GAS_PRICE_GWEI=0
    BACKFILL_BLOCK_RANGE=6000
    ```
+   
+   **Note**: `MONITOR_INTERVAL_MS` is no longer used - the bot now runs on a schedule (Vercel cron) or continuously (traditional server).
 
    **Note**: The `TRADING_ENGINE_ADDRESS` is automatically loaded from `lib/address.ts` if not set. Only override if using a different deployment.
 
@@ -84,6 +86,97 @@ npm test
 pnpm test
 ```
 
+## Deployment Options
+
+### Option 1: Vercel Serverless (Recommended for Production)
+
+The bot can run as a Vercel Cron function that executes on a schedule (minimum 1 minute intervals).
+
+#### Prerequisites:
+- Vercel account (free tier supports cron jobs)
+- Vercel KV database (free tier available)
+- Environment variables configured in Vercel dashboard
+
+#### Setup Steps:
+
+1. **Create Vercel KV Database**:
+   - Go to your Vercel project dashboard
+   - Navigate to Storage → Create → KV
+   - Create a new KV database (or use existing one)
+   - Note the connection details (auto-configured if in same project)
+
+2. **Set Environment Variables in Vercel**:
+   - Go to Project Settings → Environment Variables
+   - Add all required variables:
+     - `LIQUIDATOR_PRIVATE_KEY` (required)
+     - `RPC_URL` (optional, defaults to Mezo Testnet)
+     - `TRADING_ENGINE_ADDRESS` (optional, auto-loaded from lib)
+     - `CHAIN_ID` (optional, defaults to 31611)
+     - `MAX_GAS_PRICE_GWEI` (optional)
+     - `BACKFILL_BLOCK_RANGE` (optional, defaults to 6000)
+     - `CRON_SECRET` (optional, for securing the cron endpoint)
+
+3. **Deploy to Vercel**:
+   ```bash
+   # From project root (not liquidation-bot directory)
+   vercel deploy
+   ```
+
+4. **Cron Configuration**:
+   - The cron job is configured in `vercel.json` at the project root
+   - Default schedule: Every 1 minute (`*/1 * * * *`)
+   - To change the schedule, edit `vercel.json`:
+     ```json
+     {
+       "crons": [
+         {
+           "path": "/api/cron/check-liquidations",
+           "schedule": "*/1 * * * *"
+         }
+       ]
+     }
+     ```
+   - Cron schedule format: https://crontab.guru/
+
+5. **Verify Deployment**:
+   - Check Vercel dashboard → Functions → Cron Jobs
+   - The cron job should appear and run automatically
+   - Check function logs for execution status
+
+#### How Vercel Deployment Works:
+
+- **No Continuous Server**: Each cron invocation runs independently (serverless)
+- **Persistent Storage**: Position data stored in Vercel KV (survives between invocations)
+- **Incremental Backfill**: Backfill runs on first execution, then incrementally every hour
+- **Timeout Limits**: 
+  - Hobby plan: 60 seconds max execution time
+  - Pro plan: 300 seconds max execution time
+  - If timeout is exceeded, consider reducing `BACKFILL_BLOCK_RANGE`
+
+#### Monitoring:
+- View logs in Vercel dashboard → Functions → Logs
+- Check `/api/cron/check-liquidations` endpoint response
+- KV database stores position state between executions
+
+### Option 2: Traditional Server (Development/Local)
+
+For local development or traditional server deployment, the bot can run as a continuously-running process.
+
+**Note**: The traditional server mode maintains real-time event listeners (not available in serverless mode).
+
+```bash
+cd liquidation-bot
+npm start
+# or
+pnpm start
+```
+
+This mode:
+- Runs continuously with event listeners
+- Uses in-memory position tracking
+- Runs monitoring loop every 15 seconds (configurable)
+- Requires a server that runs 24/7
+
 ## How It Works
 
 ### Startup Sequence
@@ -107,18 +200,38 @@ pnpm test
 
 ### Runtime Operation
 
+#### Traditional Server Mode:
 4. **Event Listeners** (Real-time):
    - **`PositionOpened`**: Adds new position addresses to the tracking set
    - **`PositionClosed`**: Removes closed position addresses from tracking
    - **`Liquidated`**: Removes liquidated positions (whether by this bot or another)
 
-5. **Monitoring Loop** (every `MONITOR_INTERVAL_MS` ms, default 15s):
+5. **Monitoring Loop** (continuous):
    - Retrieves all active positions from the tracker
    - For each position:
      - Verifies position still exists via `getPosition()` call
      - Checks liquidation status via `isLiquidatable()` call
    - Batches checks (up to 10 positions at a time) for efficiency
    - Queues liquidatable positions for execution
+
+#### Vercel Serverless Mode:
+4. **Position Loading**:
+   - Loads active positions from Vercel KV storage
+   - Positions persist between cron invocations
+
+5. **Backfill Check**:
+   - Runs backfill if first execution or >1 hour since last backfill
+   - Incremental backfill from last known block to current block
+   - Full backfill on first run or if no previous backfill exists
+
+6. **Monitoring Check** (single execution per cron):
+   - Retrieves all active positions from KV
+   - For each position:
+     - Verifies position still exists via `getPosition()` call
+     - Checks liquidation status via `isLiquidatable()` call
+   - Batches checks (up to 10 positions at a time) for efficiency
+   - Executes liquidations sequentially
+   - Saves updated positions back to KV
 
 6. **Liquidation Execution**:
    - For each liquidatable position:
@@ -143,10 +256,12 @@ pnpm test
 | `LIQUIDATOR_PRIVATE_KEY` | ✅ Yes | Private key of liquidator wallet (0x-prefixed, 66 chars) | - |
 | `RPC_URL` | ❌ No | RPC endpoint URL for Mezo Testnet | `https://rpc.test.mezo.org` |
 | `TRADING_ENGINE_ADDRESS` | ❌ No | TradingEngine contract address | Auto-imported from `lib/address.ts` |
-| `MONITOR_INTERVAL_MS` | ❌ No | How often to check positions for liquidation (milliseconds) | `15000` (15 seconds) |
 | `CHAIN_ID` | ❌ No | Network chain ID (Mezo Testnet) | `31611` |
 | `MAX_GAS_PRICE_GWEI` | ❌ No | Maximum gas price in gwei (0 = no limit) | `0` (no limit) |
 | `BACKFILL_BLOCK_RANGE` | ❌ No | Number of blocks to look back for position backfill | `6000` (~7 days) |
+| `CRON_SECRET` | ❌ No | Secret for securing cron endpoint (Vercel only) | - |
+
+**Note**: `MONITOR_INTERVAL_MS` has been removed. In traditional server mode, the bot runs continuously. In Vercel serverless mode, the cron schedule is configured in `vercel.json`.
 
 ### Shared Configuration
 

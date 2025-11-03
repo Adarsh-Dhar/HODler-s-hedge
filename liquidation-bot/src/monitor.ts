@@ -1,5 +1,6 @@
 /**
- * Monitoring loop that checks positions for liquidation status
+ * Monitoring service that checks positions for liquidation status
+ * Supports both single execution (serverless) and interval-based (traditional server)
  */
 
 import type { PublicClient } from 'viem'
@@ -10,18 +11,17 @@ import type { BotConfig } from './types.js'
 export class MonitorService {
   private intervalId: NodeJS.Timeout | null = null
   private isRunning = false
-  private lastLogTime: number | null = null
 
   constructor(
     private publicClient: PublicClient,
     private positionTracker: PositionTracker,
     private tradingEngineAddress: `0x${string}`,
-    private config: BotConfig,
     private onLiquidatableFound: (userAddress: string) => Promise<void>,
+    private config?: BotConfig,
   ) {}
 
   /**
-   * Start the monitoring loop
+   * Start the monitoring loop (traditional server mode only)
    */
   start(): void {
     if (this.isRunning) {
@@ -29,20 +29,26 @@ export class MonitorService {
       return
     }
 
-    console.log(`🔄 Starting monitoring loop (interval: ${this.config.monitorIntervalMs}ms)`)
+    if (!this.config) {
+      console.log('⚠️ Cannot start interval-based monitoring without config (use executeCheck() for serverless)')
+      return
+    }
+
+    console.log(`🔄 Starting monitoring loop (interval: ${this.config.monitorIntervalMs || 15000}ms)`)
     this.isRunning = true
 
     // Initial check
     this.checkPositions()
 
     // Set up interval
+    const intervalMs = this.config.monitorIntervalMs || 15000
     this.intervalId = setInterval(() => {
       this.checkPositions()
-    }, this.config.monitorIntervalMs)
+    }, intervalMs)
   }
 
   /**
-   * Stop the monitoring loop
+   * Stop the monitoring loop (traditional server mode only)
    */
   stop(): void {
     if (this.intervalId) {
@@ -54,19 +60,21 @@ export class MonitorService {
   }
 
   /**
-   * Check all positions for liquidation status
+   * Internal method for interval-based checking (traditional server mode)
    */
   private async checkPositions(): Promise<void> {
+    await this.executeCheck()
+  }
+
+  /**
+   * Execute a single check of all positions for liquidation status
+   * Call this method from cron function or other single-execution contexts
+   */
+  async executeCheck(): Promise<void> {
     const activePositions = this.positionTracker.getActivePositions()
     
     if (activePositions.length === 0) {
-      // Log periodically so we know the bot is running but just no positions
-      const now = Date.now()
-      if (!this.lastLogTime || now - this.lastLogTime > 60000) {
-        // Log every minute when no positions
-        console.log('👀 No active positions to monitor')
-        this.lastLogTime = now
-      }
+      console.log('👀 No active positions to monitor')
       return // No positions to check
     }
 
@@ -93,6 +101,8 @@ export class MonitorService {
             if (!(position as any).exists) {
               // Position no longer exists, remove from tracking
               this.positionTracker.removePosition(userAddress)
+              // Sync to KV after removing position
+              await this.positionTracker.syncToKV()
               return
             }
 

@@ -1,24 +1,123 @@
 /**
- * Event listeners and backfill service for position tracking
+ * Position tracking service with Vercel KV storage
  */
 
 import type { PublicClient, WatchContractEventReturnType } from 'viem'
+import { kv } from '@vercel/kv'
 import { TradingEngineABI } from './clients.js'
 import type { BotConfig } from './types.js'
 
+type KVClient = typeof kv
+
 export class PositionTracker {
   private activePositions = new Set<string>()
+  private kv: KVClient | null = null
   private listeners: WatchContractEventReturnType[] = []
 
   constructor(
     private publicClient: PublicClient,
     private tradingEngineAddress: `0x${string}`,
-  ) {}
+    kv?: KVClient | null,
+  ) {
+    this.kv = kv || null
+  }
+
+  /**
+   * Load active positions from Vercel KV storage
+   */
+  async loadFromKV(): Promise<void> {
+    if (!this.kv) {
+      console.log('⚠️ KV not configured, skipping load')
+      return
+    }
+
+    try {
+      const positions = await this.kv.get<string[]>('positions:active')
+      if (positions && Array.isArray(positions)) {
+        this.activePositions = new Set(positions.map((p) => p.toLowerCase()))
+        console.log(`📥 Loaded ${this.activePositions.size} positions from KV`)
+      } else {
+        console.log('📥 No positions found in KV (first run)')
+        this.activePositions = new Set()
+      }
+    } catch (error) {
+      console.error('❌ Error loading positions from KV:', error)
+      this.activePositions = new Set()
+    }
+  }
+
+  /**
+   * Save active positions to Vercel KV storage
+   */
+  async saveToKV(): Promise<void> {
+    if (!this.kv) {
+      console.log('⚠️ KV not configured, skipping save')
+      return
+    }
+
+    try {
+      const positions = Array.from(this.activePositions)
+      await this.kv.set('positions:active', positions)
+      console.log(`💾 Saved ${positions.length} positions to KV`)
+    } catch (error) {
+      console.error('❌ Error saving positions to KV:', error)
+    }
+  }
+
+  /**
+   * Get the last backfill timestamp from KV
+   */
+  async getLastBackfillTime(): Promise<number | null> {
+    if (!this.kv) return null
+
+    try {
+      const timestamp = await this.kv.get<number>('positions:lastBackfill')
+      return timestamp || null
+    } catch (error) {
+      console.error('❌ Error getting last backfill time:', error)
+      return null
+    }
+  }
+
+  /**
+   * Get the last backfill block number from KV
+   */
+  async getLastBackfillBlock(): Promise<bigint | null> {
+    if (!this.kv) return null
+
+    try {
+      const block = await this.kv.get<string>('positions:lastBackfillBlock')
+      return block ? BigInt(block) : null
+    } catch (error) {
+      console.error('❌ Error getting last backfill block:', error)
+      return null
+    }
+  }
+
+  /**
+   * Save backfill metadata to KV
+   */
+  async saveBackfillMetadata(blockNumber: bigint): Promise<void> {
+    if (!this.kv) return
+
+    try {
+      await this.kv.set('positions:lastBackfill', Date.now())
+      await this.kv.set('positions:lastBackfillBlock', blockNumber.toString())
+    } catch (error) {
+      console.error('❌ Error saving backfill metadata:', error)
+    }
+  }
 
   /**
    * Start listening to contract events for real-time position tracking
+   * Only works in traditional server mode (not in serverless/Vercel cron)
    */
   startEventListeners(): void {
+    if (this.kv) {
+      console.log('⚠️ Event listeners not available in serverless mode (KV configured)')
+      return
+    }
+
     console.log('🔍 Starting event listeners...')
 
     // Listen for new positions
@@ -69,8 +168,13 @@ export class PositionTracker {
 
   /**
    * Stop all event listeners
+   * Only relevant in traditional server mode
    */
   stopEventListeners(): void {
+    if (this.kv) {
+      return // No-op in serverless mode
+    }
+
     this.listeners.forEach((listener) => listener())
     this.listeners = []
     console.log('🛑 Event listeners stopped')
@@ -78,15 +182,32 @@ export class PositionTracker {
 
   /**
    * Backfill positions from historical events
+   * If KV is available, will backfill incrementally from last known block
    */
-  async backfillPositions(config: BotConfig): Promise<void> {
+  async backfillPositions(config: BotConfig, forceFullBackfill: boolean = false): Promise<void> {
     console.log('📚 Backfilling positions from historical events...')
 
     try {
       const currentBlock = await this.publicClient.getBlockNumber()
-      const fromBlock = currentBlock - BigInt(config.backfillBlockRange)
+      let fromBlock: bigint
 
-      console.log(`   Fetching events from block ${fromBlock} to ${currentBlock}`)
+      // Check if we should do incremental backfill
+      if (!forceFullBackfill && this.kv) {
+        const lastBackfillBlock = await this.getLastBackfillBlock()
+        if (lastBackfillBlock && lastBackfillBlock < currentBlock) {
+          // Incremental backfill from last known block
+          fromBlock = lastBackfillBlock
+          console.log(`   Incremental backfill from block ${fromBlock} to ${currentBlock}`)
+        } else {
+          // Full backfill
+          fromBlock = currentBlock - BigInt(config.backfillBlockRange)
+          console.log(`   Full backfill from block ${fromBlock} to ${currentBlock}`)
+        }
+      } else {
+        // Full backfill
+        fromBlock = currentBlock - BigInt(config.backfillBlockRange)
+        console.log(`   Fetching events from block ${fromBlock} to ${currentBlock}`)
+      }
 
       // Fetch all relevant events in parallel
       const [positionOpenedLogs, positionClosedLogs, liquidatedLogs] = await Promise.all([
@@ -161,10 +282,14 @@ export class PositionTracker {
           console.log(`     - ${addr}`)
         })
       } else {
-        console.log(`   ⚠️ No active positions found in the last ${config.backfillBlockRange} blocks`)
-        console.log(`   ℹ️  If you have a position, it may have been opened more than ${config.backfillBlockRange} blocks ago`)
-        console.log(`   ℹ️  The bot will detect new positions via event listeners`)
+        console.log(`   ⚠️ No active positions found in the scanned blocks`)
+        console.log(`   ℹ️  New positions will be detected on the next backfill`)
       }
+
+      // Save backfill metadata
+      await this.saveBackfillMetadata(currentBlock)
+      // Save positions to KV
+      await this.saveToKV()
     } catch (error) {
       console.error('❌ Error backfilling positions:', error)
       throw error
@@ -190,6 +315,13 @@ export class PositionTracker {
    */
   removePosition(user: string): void {
     this.activePositions.delete(user.toLowerCase())
+  }
+
+  /**
+   * Sync changes to KV storage (call after modifying positions)
+   */
+  async syncToKV(): Promise<void> {
+    await this.saveToKV()
   }
 
   /**
