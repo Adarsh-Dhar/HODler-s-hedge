@@ -10,14 +10,22 @@ export async function GET(request: NextRequest) {
       throw new Error('Invalid price payload from Pyth')
     }
 
-    // Convert to UI-friendly shape; market cap/volume are not provided by Pyth, set null
+    const currentPrice = priceNum * Math.pow(10, expoNum)
+
+    // Use hardcoded historical price of 110000 for testing
+    const historicalPrice = 110000
+    
+    // Calculate percentage change: ((current - historical) / historical) * 100
+    const change24h = ((currentPrice - historicalPrice) / historicalPrice) * 100
+
+    // Convert to UI-friendly shape
     return NextResponse.json({
       success: true,
       data: {
-        price: priceNum * Math.pow(10, expoNum),
+        price: currentPrice,
         market_cap: 0,
         volume_24h: 0,
-        change_24h: 0,
+        change_24h: change24h,
         last_updated: new Date(latest.publishTime * 1000).toISOString(),
         currency: 'USD',
         symbol: 'BTC',

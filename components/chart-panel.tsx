@@ -57,8 +57,8 @@ export default function ChartPanel({
     }
   }, [btcData?.price])
   
-  // Format funding rate as percentage
-  const fundingRatePercent = fundingRate ? Number(fundingRate) / 1e18 * 100 : 0
+  // Format funding rate as percentage (fundingRate is in basis points, so divide by 100 to get percentage)
+  const fundingRatePercent = fundingRate ? Number(fundingRate) / 100 : 0
   
   // Calculate time until next funding
   const getNextFundingTime = () => {
@@ -298,7 +298,7 @@ export default function ChartPanel({
                     <div>
                       <span className="text-muted-foreground">Current Funding Rate:</span>
                       <p className="text-foreground font-semibold">
-                        {fundingRate ? `${(Number(fundingRate) / 1e18 * 100).toFixed(4)}%` : "N/A"}
+                        {fundingRate ? `${(Number(fundingRate) / 100).toFixed(4)}%` : "N/A"}
                       </p>
                     </div>
                     <div>

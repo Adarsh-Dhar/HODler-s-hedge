@@ -1,11 +1,19 @@
 import { PYTH_BTCUSD_PRICE_ID } from './address'
 
 const HERMES_BASE = process.env.NEXT_PUBLIC_PYTH_HERMES_URL || 'https://hermes.pyth.network'
+const BENCHMARKS_BASE = process.env.NEXT_PUBLIC_PYTH_BENCHMARKS_URL || 'https://benchmarks.pyth.network'
 
 export interface PythLatestPrice {
   id: string
   price: number
   conf: number
+  expo: number
+  publishTime: number
+}
+
+export interface PythHistoricalPrice {
+  id: string
+  price: number
   expo: number
   publishTime: number
 }
@@ -61,6 +69,172 @@ export async function fetchPythLatestPrice(priceId: string = PYTH_BTCUSD_PRICE_I
     expo: expoVal,
     publishTime: Number.isFinite(publishTimeVal) ? publishTimeVal : Math.floor(Date.now() / 1000),
   }
+}
+
+export async function fetchPythHistoricalPrice(
+  timestamp: number, // Unix timestamp in seconds
+  priceId: string = PYTH_BTCUSD_PRICE_ID
+): Promise<PythHistoricalPrice> {
+  if (!priceId || /^0x0+$/.test(priceId)) throw new Error('PYTH_BTCUSD_PRICE_ID not configured')
+  
+  // Use the Benchmarks API for historical data (not Hermes)
+  const url = `${BENCHMARKS_BASE}/v1/updates/price/${timestamp}?ids[]=${priceId}`
+  
+  console.log('Fetching historical price from Benchmarks API:', url, 'timestamp:', timestamp)
+  
+  const res = await fetch(url, { 
+    cache: 'no-store',
+    headers: {
+      'Accept': 'application/json',
+    }
+  })
+  
+  if (!res.ok) {
+    const errorText = await res.text().catch(() => '')
+    console.error('=== HISTORICAL PRICE API ERROR ===')
+    console.error('Status:', res.status)
+    console.error('Status Text:', res.statusText)
+    console.error('Error Text:', errorText)
+    console.error('URL:', url)
+    console.error('Timestamp:', timestamp, '(converts to:', new Date(timestamp * 1000).toISOString(), ')')
+    console.error('Price ID:', priceId)
+    console.error('Response Headers:', Object.fromEntries(res.headers.entries()))
+    console.error('==================================')
+    
+    // If 404 or similar, try multiple timestamp adjustments
+    // Price updates might not exist for exact timestamp
+    if (res.status === 404 || res.status === 400) {
+      const timestampAdjustments = [3600, 7200, 10800, 86400] // 1h, 2h, 3h, 24h earlier
+      
+      for (const adjustment of timestampAdjustments) {
+        const adjustedTimestamp = timestamp - adjustment
+        console.log(`Trying timestamp ${adjustment}s (${adjustment/3600}h) earlier: ${adjustedTimestamp} (${new Date(adjustedTimestamp * 1000).toISOString()})`)
+        const adjustedUrl = `${BENCHMARKS_BASE}/v1/updates/price/${adjustedTimestamp}?ids[]=${priceId}`
+        
+        try {
+          const adjustedRes = await fetch(adjustedUrl, { 
+            cache: 'no-store',
+            headers: { 'Accept': 'application/json' }
+          })
+          
+          console.log(`  → Status: ${adjustedRes.status}`)
+          
+          if (adjustedRes.ok) {
+            const adjustedResponseText = await adjustedRes.text()
+            console.log(`  → SUCCESS with ${adjustment}s earlier! Response length:`, adjustedResponseText.length)
+            
+            try {
+              const jsonResponse = JSON.parse(adjustedResponseText)
+              console.log('  → Parsed JSON response successfully')
+              return parseHistoricalResponse(jsonResponse, priceId, adjustedTimestamp)
+            } catch (parseError) {
+              console.error('  → Failed to parse JSON:', parseError)
+              console.error('  → Response text:', adjustedResponseText.substring(0, 500))
+              // Continue to next adjustment
+            }
+          } else {
+            const adjustedErrorText = await adjustedRes.text().catch(() => '')
+            console.log(`  → Failed: ${adjustedRes.status} - ${adjustedErrorText.substring(0, 100)}`)
+          }
+        } catch (fetchError: any) {
+          console.error(`  → Fetch error:`, fetchError.message)
+        }
+      }
+      
+      console.error('All timestamp adjustments failed. Trying alternative endpoint formats...')
+      
+      // Try alternative endpoint format on benchmarks API
+      const altUrl = `${BENCHMARKS_BASE}/api/get_price_feeds?ids[]=${priceId}&publish_time=${timestamp}`
+      console.log('Trying alternative endpoint on Benchmarks API:', altUrl)
+      try {
+        const altRes = await fetch(altUrl, { cache: 'no-store', headers: { 'Accept': 'application/json' } })
+        console.log('Alternative endpoint status:', altRes.status)
+        if (altRes.ok) {
+          const altJson = await altRes.json()
+          console.log('Alternative endpoint response keys:', Object.keys(altJson))
+          return parseHistoricalResponse(altJson, priceId, timestamp)
+        }
+      } catch (altError: any) {
+        console.error('Alternative endpoint error:', altError.message)
+      }
+    }
+    
+    throw new Error(`Pyth Benchmarks historical price failed: ${res.status} ${res.statusText}${errorText ? ` - ${errorText.substring(0, 200)}` : ''}`)
+  }
+  
+  const responseText = await res.text()
+  console.log('=== SUCCESSFUL HISTORICAL PRICE RESPONSE ===')
+  console.log('Response length:', responseText.length)
+  console.log('Response preview (first 1000 chars):', responseText.substring(0, 1000))
+  console.log('===========================================')
+  
+  let jsonResponse: any
+  try {
+    jsonResponse = JSON.parse(responseText)
+    console.log('Parsed JSON successfully. Keys:', Object.keys(jsonResponse))
+  } catch (parseError) {
+    console.error('Failed to parse as JSON:', parseError)
+    console.error('Response might be binary/hex. Full response:', responseText)
+    throw new Error('Historical price API returned non-JSON response')
+  }
+  
+  return parseHistoricalResponse(jsonResponse, priceId, timestamp)
+}
+
+function parseHistoricalResponse(jsonResponse: any, priceId: string, timestamp: number): PythHistoricalPrice {
+  console.log('Historical price API response structure:', { 
+    isArray: Array.isArray(jsonResponse),
+    keys: Object.keys(jsonResponse || {}),
+    responsePreview: JSON.stringify(jsonResponse).substring(0, 500)
+  })
+  
+  // The v1/updates/price endpoint may return different structures
+  // Try to handle various response formats
+  let f: any = undefined
+  
+  if (Array.isArray(jsonResponse)) {
+    f = jsonResponse[0]
+  } else if (jsonResponse?.parsed?.price_feeds) {
+    // Alternative structure with parsed.price_feeds array
+    f = jsonResponse.parsed.price_feeds[0]
+  } else if (jsonResponse?.price_feeds) {
+    f = jsonResponse.price_feeds[0]
+  } else if (jsonResponse?.priceFeed) {
+    f = jsonResponse.priceFeed
+  } else {
+    f = jsonResponse
+  }
+  
+  if (!f) {
+    console.error('Unable to extract price feed from response:', jsonResponse)
+    throw new Error('Hermes response missing historical price')
+  }
+  
+  // Handle both nested and flattened response structures (similar to fetchPythLatestPrice)
+  const rawPrice = f.price?.price ?? f.price ?? f.parsed?.price ?? f.parsed?.price?.price
+  const rawExpo = f.price?.expo ?? f.expo ?? f.parsed?.expo ?? f.parsed?.price?.expo
+  const rawPublishTime = f.publish_time ?? f.publishTime ?? f.price?.publishTime ?? f.parsed?.publish_time ?? f.parsed?.publishTime
+  
+  console.log('Extracted raw values:', { rawPrice, rawExpo, rawPublishTime })
+  
+  const priceVal = Number(rawPrice)
+  const expoVal = Number(rawExpo)
+  const publishTimeVal = Number(rawPublishTime)
+  
+  if (!Number.isFinite(priceVal) || !Number.isFinite(expoVal)) {
+    console.error('Invalid numeric values:', { priceVal, expoVal, rawPrice, rawExpo })
+    throw new Error('Hermes returned non-numeric historical price or expo')
+  }
+  
+  const result = {
+    id: f.id ?? priceId,
+    price: priceVal,
+    expo: expoVal,
+    publishTime: Number.isFinite(publishTimeVal) ? publishTimeVal : timestamp,
+  }
+  
+  console.log('Historical price fetched successfully:', result)
+  return result
 }
 
 // Returns an array of hex strings (bytes[]) suitable for contract calls

@@ -207,7 +207,7 @@ export default function Home() {
             <div className="bg-card border-2 border-border rounded-lg p-4">
               <p className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Funding Rate</p>
               <p className={`font-bold text-lg ${isFundingDue ? "text-destructive" : "text-foreground"}`}>
-                {fundingRate ? (Number(fundingRate) / 1e18 * 100).toFixed(4) : "0.0000"}%
+                {fundingRate ? (Number(fundingRate) / 100).toFixed(4) : "0.0000"}%
               </p>
               {(isFundingDue as boolean) === true && (
                 <p className="text-destructive text-xs mt-1">Due Now</p>
