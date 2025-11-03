@@ -31,7 +31,7 @@ function loadTradingEngineABI() {
           let abiStr = line.substring(prefixPos + prefix.length).trim()
           if (abiStr.endsWith(';')) abiStr = abiStr.slice(0, -1).trim()
           const abi = JSON.parse(abiStr)
-          return abi as typeof import('../../lib/abi/TradingEngine.js')['TradingEngineABI']
+          return abi
         }
       }
     }

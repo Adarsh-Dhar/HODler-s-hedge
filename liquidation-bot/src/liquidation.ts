@@ -45,10 +45,12 @@ export class LiquidationService {
       const hash = await this.walletClient.writeContract({
         address: this.tradingEngineAddress,
         abi: TradingEngineABI,
+        chain: null,
+        account: null,
         functionName: 'liquidate',
         args: [userAddress as `0x${string}`],
         gasPrice,
-      })
+      } as any)
 
       console.log(`📝 Transaction submitted: ${hash}`)
 
@@ -69,7 +71,7 @@ export class LiquidationService {
           })
 
           if (logs.length > 0) {
-            reward = logs[0].args.reward as bigint
+            reward = (logs[0] as any).args?.reward as bigint
             const rewardFormatted = Number(reward) / 1e18
             console.log(`✅ Successfully liquidated ${userAddress}! Reward: ${rewardFormatted} MUSD`)
           }

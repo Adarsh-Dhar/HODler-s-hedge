@@ -55,12 +55,14 @@ async function testConnection() {
       address: config.tradingEngineAddress,
       abi: TradingEngineABI,
       functionName: 'markPrice',
+      args: [],
     })
     
     const paused = await publicClient.readContract({
       address: config.tradingEngineAddress,
       abi: TradingEngineABI,
       functionName: 'paused',
+      args: [],
     })
     
     console.log('✅ Contract connection successful')

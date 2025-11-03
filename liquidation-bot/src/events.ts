@@ -27,8 +27,8 @@ export class PositionTracker {
       abi: TradingEngineABI,
       eventName: 'PositionOpened',
       onLogs: (logs) => {
-        logs.forEach((log) => {
-          const user = (log.args.user as `0x${string}`).toLowerCase()
+        logs.forEach((log: any) => {
+          const user = (log.args?.user as `0x${string}`).toLowerCase()
           this.activePositions.add(user)
           console.log(`📈 New position opened: ${user}`)
         })
@@ -41,8 +41,8 @@ export class PositionTracker {
       abi: TradingEngineABI,
       eventName: 'PositionClosed',
       onLogs: (logs) => {
-        logs.forEach((log) => {
-          const user = (log.args.user as `0x${string}`).toLowerCase()
+        logs.forEach((log: any) => {
+          const user = (log.args?.user as `0x${string}`).toLowerCase()
           this.activePositions.delete(user)
           console.log(`✅ Position closed: ${user}`)
         })
@@ -55,9 +55,9 @@ export class PositionTracker {
       abi: TradingEngineABI,
       eventName: 'Liquidated',
       onLogs: (logs) => {
-        logs.forEach((log) => {
-          const user = (log.args.user as `0x${string}`).toLowerCase()
-          const liquidator = log.args.liquidator as `0x${string}`
+        logs.forEach((log: any) => {
+          const user = (log.args?.user as `0x${string}`).toLowerCase()
+          const liquidator = log.args?.liquidator as `0x${string}`
           this.activePositions.delete(user)
           console.log(`⚡ Position liquidated: ${user} by ${liquidator}`)
         })
