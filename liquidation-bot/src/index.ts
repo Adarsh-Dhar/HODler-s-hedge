@@ -2,14 +2,14 @@
  * Main entry point for the liquidation bot
  */
 
-import { kv } from '@vercel/kv'
+import type { Redis } from '@upstash/redis'
 import { loadConfig, logConfig } from './config.js'
 import { createClients } from './clients.js'
 import { PositionTracker } from './events.js'
 import { MonitorService } from './monitor.js'
 import { LiquidationService } from './liquidation.js'
 
-type KVClient = typeof kv
+type KVClient = Redis | null
 
 async function main() {
   console.log('🤖 Liquidation Bot Starting...')

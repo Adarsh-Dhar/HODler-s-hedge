@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { kv } from '@vercel/kv'
+import { Redis } from '@upstash/redis'
 import { runLiquidationCheck } from '../../../../liquidation-bot/src/index.js'
 
 /**
@@ -22,11 +22,14 @@ export async function GET(request: NextRequest) {
   try {
     console.log('🕐 Cron job triggered at', new Date().toISOString())
     
-    // Initialize KV client
-    const kvClient = kv || null
+    // Initialize Upstash Redis client using HH_ prefixed environment variables
+    const redis = new Redis({
+      url: process.env.HH_KV_REST_API_URL!,
+      token: process.env.HH_KV_REST_API_TOKEN!,
+    })
 
     // Run the liquidation check
-    await runLiquidationCheck(kvClient)
+    await runLiquidationCheck(redis)
 
     return NextResponse.json({
       success: true,

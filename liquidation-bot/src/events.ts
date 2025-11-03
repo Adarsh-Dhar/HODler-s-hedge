@@ -3,11 +3,11 @@
  */
 
 import type { PublicClient, WatchContractEventReturnType } from 'viem'
-import { kv } from '@vercel/kv'
+import type { Redis } from '@upstash/redis'
 import { TradingEngineABI } from './clients.js'
 import type { BotConfig } from './types.js'
 
-type KVClient = typeof kv
+type KVClient = Redis | null
 
 export class PositionTracker {
   private activePositions = new Set<string>()
